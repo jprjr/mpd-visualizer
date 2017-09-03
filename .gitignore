@@ -1,0 +1,15 @@
+/src/bin2c
+/mpd-visualizer
+*.dSYM
+*.o
+*.a
+*.so
+*.dylib
+*.so.*
+*.dylib.*
+*.a.xyzzy
+*.lh
+*.swp
+/gmon.out
+/analysis.txt
+.DS_Store
