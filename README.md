@@ -404,6 +404,20 @@ return {
 }
 ```
 
+## License
+
+Unless otherwise states, all files are released under
+an MIT-style license. Details in `LICENSE`
+
+Some exceptions:
+
+* `src/ringbuf.h` and `src/ringbuf.c` - retains their original licensing,
+see `LICENSE.ringbuf` for full details.
+* `src/tinydir.h` - retains original licensing (simplified BSD), details found
+within the file.
+* `src/stb_image.h` and `src/stb_image_resize.h` - remains in the public domain
+* `src/thread.h` - available under an MIT-style license or Public Domain, see file
+for details.
 
 ## Known users
 
