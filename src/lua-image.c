@@ -7,6 +7,8 @@
 #include <string.h>
 #include <lauxlib.h>
 #include <skalibs/skalibs.h>
+#include <pthread.h>
+#include <sched.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -1098,6 +1100,10 @@ int luaopen_image(lua_State *L, thread_queue_t *ret) {
     }
 
     thread = thread_create( lua_image_thread, NULL, "image thread", THREAD_STACK_SIZE_DEFAULT );
+    struct sched_param params;
+    params.sched_priority = sched_get_priority_min(SCHED_IDLE);
+    pthread_setschedparam((pthread_t)thread, SCHED_IDLE, &params);
+    
 
     return 0;
 }

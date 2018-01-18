@@ -4,6 +4,8 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#include <pthread.h>
+#include <sched.h>
 #include "visualizer.h"
 
 #define USAGE  "Usage: visualizer (options)\n" \
@@ -26,6 +28,8 @@ int main(int argc, char const *const *argv) {
     visualizer *vis = &_vis;
 
     int own_fifo = -1;
+    pthread_t this_thread = pthread_self();
+    struct sched_param sparams;
 
     unsigned int video_width = 0;
     unsigned int video_height = 0;
@@ -146,6 +150,9 @@ int main(int argc, char const *const *argv) {
                         lua_folder)) {
         strerr_die1x(1,"Unable to create visualizer");
     }
+
+    sparams.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    pthread_setschedparam(this_thread,SCHED_FIFO,&sparams);
 
     own_fifo = mkfifo(output_path,
       S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
