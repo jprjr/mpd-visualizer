@@ -50,6 +50,9 @@ visualizer \
 
 Hopefully, you can just type `make` and compile `mpd-visualizer`
 
+If you need to customize your compiler, cflags, ldflags, etc
+copy `config.mak.dist` to `config.mak` and edit as-needed.
+
 ## What happens
 
 When `mpd-visualizer` starts up, it will start reading in audio from the MPD FIFO. As

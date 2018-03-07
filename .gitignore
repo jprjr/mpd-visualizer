@@ -13,3 +13,4 @@
 /gmon.out
 /analysis.txt
 .DS_Store
+/config.mak
