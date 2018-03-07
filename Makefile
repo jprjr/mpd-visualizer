@@ -68,7 +68,7 @@ src/libvisualizer.a: $(LIBOBJS)
 	ar rcs $@ $^
 
 src/bin2c: src/bin2c.c
-	$(CC) -o src/bin2c src/bin2c.c
+	$(HOSTCC) -o src/bin2c src/bin2c.c
 
 clean:
 	rm -f mpd-visualizer src/libvisualizer.a src/bin2c $(LIBOBJS) $(LUALHS)

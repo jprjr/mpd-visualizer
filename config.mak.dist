@@ -1,3 +1,4 @@
+HOSTCC=gcc
 CC=gcc
 
 CFLAGS_OPTIMIZE = -pedantic -g0 -O3 -fPIC -march=native
