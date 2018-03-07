@@ -2,23 +2,8 @@
 .SUFFIXES:
 .PRECIOUS: src/%.lh src/%.o
 
-CC=gcc
-
-CFLAGS_OPTIMIZE = -pedantic -g0 -O3 -fPIC -march=native
-
-LUA=luajit
-
-CFLAGS = $(shell pkg-config --cflags fftw3)
-CFLAGS += $(shell pkg-config --cflags libmpdclient)
-CFLAGS += $(shell pkg-config --cflags $(LUA))
-CFLAGS += -Wall -Wextra $(CFLAGS_OPTIMIZE)
-CFLAGS += -D_GNU_SOURCE
-
-LDFLAGS = -lskarnet -lm
-LDFLAGS += -Wl,-rpath,$(shell pkg-config --variable=libdir libmpdclient)
-LDFLAGS += $(shell pkg-config --libs fftw3)
-LDFLAGS += $(shell pkg-config --libs libmpdclient)
-LDFLAGS += $(shell pkg-config --libs $(LUA))
+include config.mak.dist
+-include config.mak
 
 HEADERS = \
   src/audio.h \
