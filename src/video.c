@@ -26,12 +26,18 @@ int
 avi_stream_free(avi_stream *stream) {
     if(!stream) return 0;
 
-    if(stream->video_frame) {
-        free(stream->video_frame);
+    if(stream->input_frame) {
+        free(stream->input_frame);
     }
-    if(stream->audio_frame) {
-        free(stream->audio_frame);
+
+    if(stream->output_frame) {
+        free(stream->output_frame);
     }
+
+    if(stream->frame_data) {
+        free(stream->frame_data);
+    }
+
     return 0;
 }
 
@@ -68,12 +74,26 @@ avi_stream_init(
     }
 
     stream->video_frame_len = sizeof(uint8_t) * width * height * 3;
-    stream->video_frame = (uint8_t *)malloc(stream->video_frame_len);
-    if(!stream->video_frame) return avi_stream_free(stream);
-
     stream->audio_frame_len = sizeof(uint8_t) * (samplerate / framerate) * channels * samplesize;
-    stream->audio_frame = (uint8_t *)malloc(stream->audio_frame_len);
-    if(!stream->audio_frame) return avi_stream_free(stream);
+    stream->frame_len = stream->video_frame_len + stream->audio_frame_len + 16;
+
+    stream->input_frame = (char *)malloc(stream->frame_len);
+    if(!stream->input_frame) return avi_stream_free(stream);
+
+    stream->output_frame = (char *)malloc(stream->frame_len);
+    if(!stream->output_frame) return avi_stream_free(stream);
+    memset(stream->output_frame,0,stream->frame_len);
+
+    stream->video_frame_header = (uint8_t *)stream->input_frame;
+    stream->video_frame = stream->video_frame_header + 8;
+    stream->audio_frame_header = stream->video_frame + stream->video_frame_len;
+    stream->audio_frame = stream->audio_frame_header + 8;
+    memset(stream->input_frame,0,stream->frame_len);
+
+    stream->frame_data = (char *)malloc(1 + ( framerate * stream->frame_len));
+    if(!stream->frame_data) return avi_stream_free(stream);
+
+    cbuffer_init(&(stream->frames), stream->frame_data, 1 + (framerate * stream->frame_len));
 
     memcpy(stream->avi_header,avi_header,326);
 
@@ -105,38 +125,8 @@ avi_stream_init(
 }
 
 int
-avi_stream_write_header(int fd, avi_stream *stream) {
+avi_stream_write_header(avi_stream *stream,int fd) {
     return fd_write(fd,(char *)stream->avi_header,326);
-}
-
-int
-avi_stream_write_frame(int fd, avi_stream *stream) {
-    int vh_test = 0;
-    int vf_test = 0;
-    int ah_test = 0;
-    int af_test = 0;
-
-    vh_test = fd_write(fd,(char *)stream->video_frame_header,8);
-    if(vh_test == -1) {
-        return -1;
-    }
-
-    vf_test = fd_write(fd,(char *)stream->video_frame,stream->video_frame_len);
-    if(vf_test == -1) {
-        return -1;
-    }
-
-    ah_test = fd_write(fd,(char *)stream->audio_frame_header,8);
-    if(ah_test == -1) {
-        return -1;
-    }
-
-    af_test = fd_write(fd,(char *)stream->audio_frame,stream->audio_frame_len);
-    if(af_test == -1) {
-        return -1;
-    }
-    return vh_test + vf_test + ah_test + af_test;
-
 }
 
 #ifdef __cplusplus

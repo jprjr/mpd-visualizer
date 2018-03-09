@@ -211,28 +211,6 @@ int visualizer_grab_audio(visualizer *vis, int fd) {
 }
 
 
-static void try_open(visualizer *vis) {
-    if(vis->output_fd != -1) {
-        return;
-    }
-
-    vis->output_fd = open_write(vis->output_fifo);
-    if(vis->output_fd > -1) {
-        ndelay_off(vis->output_fd);
-        avi_stream_write_header(vis->output_fd,&(vis->stream));
-    }
-}
-
-static void try_write(visualizer *vis) {
-    if(vis->output_fd == -1) {
-        return;
-    }
-    if(avi_stream_write_frame(vis->output_fd,&(vis->stream)) == -1) {
-        fd_close(vis->output_fd);
-        vis->output_fd = -1;
-    }
-}
-
 static void visualizer_free_metadata(visualizer *vis) {
     if(vis->mpd_stat) {
         mpd_status_free(vis->mpd_stat);
@@ -341,8 +319,32 @@ static void visualizer_get_metadata(visualizer *vis) {
     mpd_response_finish(vis->mpd_conn);
 }
 
+int visualizer_write_frames(visualizer *vis, int fd) {
+    int bytes = 0;
 
-int visualizer_write_frames(visualizer *vis) {
+    if(cbuffer_len(&(vis->stream.frames)) < vis->stream.frame_len) {
+        return 0;
+    }
+
+    if(vis->stream.output_frame_len == 0) {
+        cbuffer_get(&(vis->stream.frames),vis->stream.output_frame,vis->stream.frame_len);
+        vis->stream.output_frame_len = vis->stream.frame_len;
+    }
+
+    bytes = fd_write(fd,vis->stream.output_frame + (vis->stream.frame_len - vis->stream.output_frame_len),vis->stream.output_frame_len);
+
+    if(bytes < 0) {
+        vis->stream.output_frame_len = 0;
+        return -1;
+    }
+
+    vis->stream.output_frame_len -= (unsigned int)bytes;
+
+    return 1;
+}
+
+
+int visualizer_make_frames(visualizer *vis) {
     int frames = 0;
     unsigned long i = 0;
     image_q *q = NULL;
@@ -389,8 +391,7 @@ int visualizer_write_frames(visualizer *vis) {
 
         wake_queue();
 
-        try_open(vis);
-        try_write(vis);
+        cbuffer_put(&(vis->stream.frames),vis->stream.input_frame,vis->stream.frame_len);
 
         vis->processor.samples_available -= vis->processor.sample_window_len;
         frames++;
