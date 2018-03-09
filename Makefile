@@ -11,7 +11,6 @@ HEADERS = \
   src/image.h \
   src/lua-file.h \
   src/lua-image.h \
-  src/ringbuf.h \
   src/shared.h \
   src/stb_image.h \
   src/stb_image_resize.h \
@@ -25,7 +24,6 @@ LIBSRCS = \
   src/image.c \
   src/lua-file.c \
   src/lua-image.c \
-  src/ringbuf.c \
   src/thread.c \
   src/video.c \
   src/visualizer.c
@@ -37,7 +35,6 @@ LIBOBJS = \
   src/lua-audio.o \
   src/lua-file.o \
   src/lua-image.o \
-  src/ringbuf.o \
   src/thread.o \
   src/video.o \
   src/visualizer.o
@@ -46,8 +43,6 @@ LUALHS = \
   src/font.lua.lh \
   src/image.lua.lh \
   src/stream.lua.lh
-
-#src/visualizer.lua.lh
 
 MAINSRCS = src/main.c
 

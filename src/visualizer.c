@@ -195,16 +195,13 @@ visualizer_free(visualizer *vis) {
 int visualizer_grab_audio(visualizer *vis, int fd) {
     int bytes_read = 0;
     int samples_read = 0;
-    bytes_read = fd_read(fd,(char *)vis->buffer,vis->bytes_to_read);
+    bytes_read = fd_read(fd,vis->buffer,vis->bytes_to_read);
     if(bytes_read <= 0) {
         strerr_warn1sys("Problem grabbing audio data: ");
         return bytes_read;
     }
 
-    ringbuf_memcpy_into(
-      vis->processor.samples,
-      vis->buffer,
-      bytes_read);
+    cbuffer_put(&(vis->processor.samples),vis->buffer,bytes_read);
 
     samples_read = bytes_read / (vis->processor.channels * vis->processor.samplesize);
 
@@ -447,7 +444,7 @@ visualizer_init(visualizer *vis,
 
     vis->buffer_len = sizeof(uint8_t) * samplerate * channels * samplesize * 4;
 
-    vis->buffer = (uint8_t *)malloc(vis->buffer_len);
+    vis->buffer = (char *)malloc(vis->buffer_len);
     if(!vis->buffer) {
         visualizer_free(vis);
         return 0;
