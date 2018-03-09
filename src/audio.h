@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <complex.h>
 #include <fftw3.h>
-#include "ringbuf.h"
+#include <skalibs/cbuffer.h>
 
 #define audio_min(a,b) ((a) < (b) ? (a) : (b) )
 #define audio_max(a,b) ((a) > (b) ? (a) : (b) )
@@ -35,7 +35,7 @@ typedef struct audio_processor {
     double sample_max_val; /* pow(2,(8*samplesize-1)) */
     int firstflag;
 
-    ringbuf_t samples;
+    cbuffer_t samples;
     double *window; /* window[sample_window_len] */
 
     double *fftw_in;   /* samples_mono[chunk_len] */
@@ -46,7 +46,7 @@ typedef struct audio_processor {
     frange *spectrum_cur;
 
     unsigned int output_buffer_len;
-    uint8_t *output_buffer; /* output_buffer[sample_window_len * samplesize * channels] */
+    char *output_buffer; /* output_buffer[sample_window_len * samplesize * channels] */
     void (*audio_downmix_func)(struct audio_processor *);
 
 } audio_processor;
@@ -65,7 +65,7 @@ typedef struct audio_processor {
     .fftw_len = 0, \
     .sample_max_val = 0.0f, \
     .firstflag = 0, \
-    .samples = NULL, \
+    .samples = CBUFFER_ZERO, \
     .window = NULL, \
     .fftw_in = NULL, \
     .fftw_out = NULL, \
