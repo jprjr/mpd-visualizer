@@ -1,5 +1,6 @@
 #ifndef VIDEO_H
 #define VIDEO_H
+#include <skalibs/cbuffer.h>
 
 extern const char avi_header[326];
 
@@ -14,14 +15,20 @@ typedef struct avi_stream {
 
     uint8_t avi_header[326];
 
-    uint8_t video_frame_header[8];
-    uint8_t audio_frame_header[8];
-
     unsigned int video_frame_len;
     unsigned int audio_frame_len;
+    unsigned int frame_len;
+    unsigned int output_frame_len;
 
     uint8_t *video_frame;
     uint8_t *audio_frame;
+    uint8_t *video_frame_header;
+    uint8_t *audio_frame_header;
+
+    char *input_frame;
+    char *output_frame;
+    char *frame_data;
+    cbuffer_t frames;
 } avi_stream;
 
 #define AVI_STREAM_ZERO { \
@@ -33,8 +40,16 @@ typedef struct avi_stream {
   .samplesize = 0, \
   .video_frame_len = 0, \
   .audio_frame_len = 0, \
+  .frame_len = 0, \
+  .output_frame_len = 0, \
   .video_frame = NULL, \
   .audio_frame = NULL, \
+  .output_frame = NULL, \
+  .video_frame_header = NULL, \
+  .audio_frame_header = NULL, \
+  .input_frame = NULL, \
+  .frame_data = NULL, \
+  .frames = CBUFFER_ZERO, \
 }
 
 #ifdef __cplusplus
@@ -52,10 +67,7 @@ avi_stream_init(
   unsigned int samplesize);
 
 int
-avi_stream_write_header(int fd, avi_stream *stream);
-
-int
-avi_stream_write_frame(int fd, avi_stream *stream);
+avi_stream_write_header(avi_stream *stream, int fd);
 
 int
 avi_stream_free(avi_stream *stream);

@@ -38,6 +38,7 @@ int main(int argc, char const *const *argv) {
     unsigned int channels = 0;
     unsigned int samplesize = 0;
     unsigned int bars = 0;
+    unsigned int fdnum = 2;
 
     const char *input_path  = NULL;
     const char *output_path = NULL;
@@ -47,7 +48,7 @@ int main(int argc, char const *const *argv) {
     int events = 0;
     int signal = 0;
 
-    unsigned int frames_written = 0;
+    unsigned int frames_made = 0;
     unsigned int frame_counter = 0;
 
     tain_t now = TAIN_ZERO;
@@ -58,7 +59,7 @@ int main(int argc, char const *const *argv) {
     double average_fps = 0.0f;
     double desired_fps = 0.0f;
 
-    iopause_fd fds[2];
+    iopause_fd fds[3];
 
     fds[0].fd = selfpipe_init();
     fds[0].events = IOPAUSE_READ;
@@ -77,6 +78,9 @@ int main(int argc, char const *const *argv) {
 
     fds[1].fd = -1;
     fds[1].events = 0;
+
+    fds[2].fd = -1;
+    fds[2].events = 0;
 
     subgetopt_t l = SUBGETOPT_ZERO;
 
@@ -185,9 +189,20 @@ int main(int argc, char const *const *argv) {
     tain_clockmon(vis->tain_last,vis->tain_offset);
 
     while( 1 ) {
+        if(fdnum == 2) {
+            fds[2].fd = open_write(vis->output_fifo);
+            if(fds[2].fd > -1) {
+                fdnum = 3;
+                fds[2].revents = 0;
+                fds[2].events = IOPAUSE_WRITE | IOPAUSE_EXCEPT;
+                ndelay_off(fds[2].fd);
+                avi_stream_write_header(&(vis->stream),fds[2].fd);
+            }
+
+        }
         /* select()-based iopause returns IOPAUSE_EXCEPT
          * if the data read was incomplete */
-        events = iopause_stamp(fds,2,0,&now);
+        events = iopause_stamp(fds,fdnum,0,&now);
         if(events && fds[0].revents & IOPAUSE_READ) {
             signal = selfpipe_read();
             switch(signal) {
@@ -204,11 +219,26 @@ int main(int argc, char const *const *argv) {
 
         if(events && fds[1].revents & IOPAUSE_READ) {
             if(visualizer_grab_audio(vis,fds[1].fd) <= 0) goto breakout;
-            do {
-                frames_written = visualizer_write_frames(vis);
-                frame_counter += frames_written;
-            } while (frames_written > 0);
         }
+
+        if(events && fds[2].revents & IOPAUSE_WRITE) {
+            if(visualizer_write_frames(vis,fds[2].fd) < 0) goto closefifo;
+        }
+
+        if(events && fds[2].revents & IOPAUSE_EXCEPT) {
+            closefifo:
+            fdnum = 2;
+            fd_close(fds[2].fd);
+            fds[2].fd = -1;
+            fds[2].revents = 0;
+            fds[2].events = 0;
+        }
+
+        do {
+            frames_made = visualizer_make_frames(vis);
+            frame_counter += frames_made;
+        } while (frames_made > 0);
+
         if(frame_counter >= framerate) {
             tain_clockmon(vis->tain_cur,vis->tain_offset);
             tain_sub(&diff,vis->tain_cur,vis->tain_last);
@@ -224,7 +254,10 @@ int main(int argc, char const *const *argv) {
     }
 
     breakout:
-    visualizer_write_frames(vis);
+    visualizer_make_frames(vis);
+    if(fds[2].fd > -1) {
+        visualizer_write_frames(vis,fds[2].fd);
+    }
 
     cleanup:
     fd_close(fds[0].fd);

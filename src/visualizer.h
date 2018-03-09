@@ -17,7 +17,6 @@ typedef struct visualizer {
     audio_processor processor;
     const char *lua_folder;
     const char *output_fifo;
-    int output_fd;
     char *buffer;
     int buffer_len;
     int bytes_to_read;
@@ -40,7 +39,6 @@ typedef struct visualizer {
   .processor = AUDIO_PROCESSOR_ZERO, \
   .lua_folder = NULL, \
   .output_fifo = NULL, \
-  .output_fd = -1, \
   .buffer = NULL, \
   .bytes_to_read = 0, \
   .mpd_conn = NULL, \
@@ -75,7 +73,10 @@ int
 visualizer_grab_audio(visualizer *vis, int fd);
 
 int
-visualizer_write_frames(visualizer *vis);
+visualizer_make_frames(visualizer *vis);
+
+int
+visualizer_write_frames(visualizer *vis, int fd);
 
 int
 visualizer_free(visualizer *vis);
