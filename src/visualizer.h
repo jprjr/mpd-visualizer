@@ -18,7 +18,7 @@ typedef struct visualizer {
     const char *lua_folder;
     const char *output_fifo;
     int output_fd;
-    uint8_t *buffer;
+    char *buffer;
     int buffer_len;
     int bytes_to_read;
     struct mpd_connection *mpd_conn;
