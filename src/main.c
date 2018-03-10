@@ -200,6 +200,12 @@ int main(int argc, char const *const *argv) {
             }
 
         }
+
+        do {
+            frames_made = visualizer_make_frames(vis);
+            frame_counter += frames_made;
+        } while (frames_made > 0);
+
         /* select()-based iopause returns IOPAUSE_EXCEPT
          * if the data read was incomplete */
         events = iopause_stamp(fds,fdnum,0,&now);
@@ -217,6 +223,7 @@ int main(int argc, char const *const *argv) {
             }
         }
 
+
         if(events && fds[1].revents & IOPAUSE_READ) {
             if(visualizer_grab_audio(vis,fds[1].fd) <= 0) goto breakout;
         }
@@ -232,12 +239,8 @@ int main(int argc, char const *const *argv) {
             fds[2].fd = -1;
             fds[2].revents = 0;
             fds[2].events = 0;
+            vis->stream.output_frame_len = 0;
         }
-
-        do {
-            frames_made = visualizer_make_frames(vis);
-            frame_counter += frames_made;
-        } while (frames_made > 0);
 
         if(frame_counter >= framerate) {
             tain_clockmon(vis->tain_cur,vis->tain_offset);
