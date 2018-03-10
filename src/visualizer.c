@@ -201,6 +201,10 @@ int visualizer_grab_audio(visualizer *vis, int fd) {
         return bytes_read;
     }
 
+    if(cbuffer_isfull(&(vis->processor.samples))) {
+        cbuffer_rseek(&(vis->processor.samples),bytes_read);
+    }
+
     cbuffer_put(&(vis->processor.samples),vis->buffer,bytes_read);
 
     samples_read = bytes_read / (vis->processor.channels * vis->processor.samplesize);
@@ -391,6 +395,9 @@ int visualizer_make_frames(visualizer *vis) {
 
         wake_queue();
 
+        if(cbuffer_isfull(&(vis->stream.frames))) {
+            cbuffer_rseek(&(vis->stream.frames),vis->stream.frame_len);
+        }
         cbuffer_put(&(vis->stream.frames),vis->stream.input_frame,vis->stream.frame_len);
 
         vis->processor.samples_available -= vis->processor.sample_window_len;
