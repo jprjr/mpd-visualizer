@@ -328,10 +328,6 @@ int visualizer_write_frame(visualizer *vis, int fd) {
         return 0;
     }
 
-    if(cbuffer_len(&(vis->stream.frames)) < vis->stream.frame_len) {
-        return 0;
-    }
-
     if(vis->stream.output_frame_len == 0) {
         cbuffer_get(&(vis->stream.frames),vis->stream.output_frame,vis->stream.frame_len);
         vis->stream.output_frame_len = vis->stream.frame_len;
@@ -550,13 +546,7 @@ visualizer_loop(visualizer *vis) {
     struct stat st;
     int events = 0;
     int signal = 0;
-
-    tain_t _deadline = TAIN_ZERO;
-    tain_t *deadline = NULL; /* this gets set to &_deadline after the first frame is made */
-    tain_t _now = TAIN_ZERO;
-    tain_t *now = &_now;
-    tain_t _offset = TAIN_ZERO;
-    tain_t *offset = &_offset;
+    int frame = 0;
 
     pthread_t this_thread = pthread_self();
 
@@ -621,9 +611,6 @@ visualizer_loop(visualizer *vis) {
     }
     fds[1].events = IOPAUSE_READ;
 
-    tain_clockmon_init(offset);
-    tain_clockmon(now,offset);
-
     while( 1 ) {
         if(fdnum == 2) {
             fds[2].fd = open_write(vis->output_fifo);
@@ -637,38 +624,7 @@ visualizer_loop(visualizer *vis) {
 
         }
 
-        tain_clockmon(now,offset);
-        events = iopause_stamp(fds,fdnum,deadline,now);
-
-        if((fds[2].revents & IOPAUSE_WRITE) || events == 0) {
-            switch(visualizer_write_frame(vis,fds[2].fd)) {
-                case -1: goto closefifo;
-                case 1: {
-                    if(deadline == NULL) {
-                        deadline = &_deadline;
-                    }
-                    fds[2].events = IOPAUSE_EXCEPT;
-                    tain_clockmon(deadline,offset);
-                    deadline->nano += nanosecs_per_frame;
-                    break;
-                }
-                case 0: {
-                    deadline = NULL;
-                }
-            }
-        }
-
-        if(events && fds[2].revents & IOPAUSE_EXCEPT) {
-            closefifo:
-            fdnum = 2;
-            fd_close(fds[2].fd);
-            fds[2].fd = -1;
-            fds[2].revents = 0;
-            fds[2].events = 0;
-            vis->stream.output_frame_len = 0;
-            deadline = NULL;
-        }
-
+        events = iopause_stamp(fds,fdnum,0,0);
 
         if(events && fds[0].revents & IOPAUSE_READ) {
             signal = selfpipe_read();
@@ -688,11 +644,23 @@ visualizer_loop(visualizer *vis) {
             if(visualizer_grab_audio(vis,fds[1].fd) <= 0) goto breakout;
         }
 
-        if(visualizer_make_frames(vis) > 0) {
-            if(fds[2].fd != -1 && deadline == NULL) {
-                // write out next frame ASAP
-                fds[2].events = IOPAUSE_WRITE | IOPAUSE_EXCEPT;
+        visualizer_make_frames(vis);
+
+        if(cbuffer_len(&(vis->stream.frames)) >= vis->stream.frame_len) {
+            frame = visualizer_write_frame(vis,fds[2].fd);
+            if(frame == -1) {
+                goto closefifo;
             }
+        }
+
+        if(events && fds[2].revents & IOPAUSE_EXCEPT) {
+            closefifo:
+            fdnum = 2;
+            fd_close(fds[2].fd);
+            fds[2].fd = -1;
+            fds[2].revents = 0;
+            fds[2].events = 0;
+            vis->stream.output_frame_len = 0;
         }
 
         lua_gc(vis->Lua,LUA_GCCOLLECT,0);
