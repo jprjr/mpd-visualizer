@@ -612,21 +612,28 @@ visualizer_init(visualizer *vis,
         strerr_die1sys(1,"Unable to trap SIGUSR1: ");
     }
 
-    vis->own_fifo = mkfifo(vis->output_fifo,
-      S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
+    if(strcmp(vis->output_fifo,"-") != 0) {
+        vis->own_fifo = mkfifo(vis->output_fifo,
+          S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
 
-    if(vis->own_fifo < 0) {
-        if(stat(vis->output_fifo,&st) == 0) {
-            if(!S_ISFIFO(st.st_mode)) {
-                strerr_die3x(1,"Output path ",vis->output_fifo," exists and is not a fifo");
+        if(vis->own_fifo < 0) {
+            if(stat(vis->output_fifo,&st) == 0) {
+                if(!S_ISFIFO(st.st_mode)) {
+                    strerr_die3x(1,"Output path ",vis->output_fifo," exists and is not a fifo");
+                }
+                else {
+                    vis->own_fifo = 0;
+                }
             }
-            else {
-                vis->own_fifo = 0;
-            }
+        }
+        else {
+            vis->own_fifo = 1;
         }
     }
     else {
-        vis->own_fifo = 1;
+        vis->own_fifo = 0;
+        vis->fds[2].fd = fileno(stdout);
+        avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
     }
 
     if(vis->own_fifo < 0) {
