@@ -170,6 +170,17 @@ void audio_processor_fftw(audio_processor *processor) {
 }
 
 int
+audio_processor_reload(audio_processor *processor) {
+    if(processor->channels == 2) {
+        processor->audio_downmix_func = &stereo_downmix;
+    }
+    else {
+        processor->audio_downmix_func = &mono_downmix;
+    }
+    return 1;
+}
+
+int
 audio_processor_init(audio_processor *processor) {
     if(!processor) return 0;
 

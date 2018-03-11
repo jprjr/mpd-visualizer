@@ -30,6 +30,10 @@ typedef struct visualizer {
     thread_queue_t image_queue;
     image_q images[100];
     void (*lua_image_cb)(lua_State *L, intptr_t table_ref, unsigned int image_len, uint8_t *image);
+    iopause_fd fds[3];
+    int own_fifo;
+    uint32_t nanosecs_per_frame;
+    int reload;
 } visualizer;
 
 #define VISUALIZER_ZERO { \
@@ -46,6 +50,14 @@ typedef struct visualizer {
   .lua_funcs = GENALLOC_ZERO, \
   .Lua = NULL, \
   .lua_image_cb = NULL, \
+  .fds = { \
+    { .fd = -1, .events = 0, .revents = 0 }, \
+    { .fd = -1, .events = 0, .revents = 0 }, \
+    { .fd = -1, .events = 0, .revents = 0 }, \
+  }, \
+  .own_fifo = -1, \
+  .nanosecs_per_frame = 1000000000 , \
+  .reload = 0, \
 }
 
 #ifdef __cplusplus
@@ -66,28 +78,19 @@ visualizer_init(visualizer *vis,
                 const char *lua_folder);
 
 int
-visualizer_grab_audio(visualizer *vis, int fd);
-
-int
-visualizer_make_frames(visualizer *vis);
-
-int
-visualizer_write_frame(visualizer *vis, int fd);
-
-int
-visualizer_free(visualizer *vis);
-
-void
-visualizer_load_scripts(visualizer *vis);
-
-void
-visualizer_set_image_cb(void (*lua_image_cb)(lua_State *L, intptr_t table_ref, unsigned int frames, uint8_t *image));
-
-int
 visualizer_loop(visualizer *vis);
 
+int
+visualizer_cleanup(visualizer *vis);
+
+int
+visualizer_reload(visualizer *vis);
+
+int
+visualizer_unload(visualizer *vis);
+
 #ifdef __cplusplus
-extern "C" {
+}
 #endif
 
 #endif

@@ -1071,11 +1071,31 @@ static const struct luaL_Reg lua_image_methods[] = {
     { NULL     , NULL                },
 };
 
-int luaopen_image(lua_State *L, thread_queue_t *ret) {
+int luaimage_setup_threads(thread_queue_t *ret) {
     thread_signal_init(&t_signal);
     thread_queue_init(&thread_queue,100,(void **)&image_queue,0);
     ret_queue = ret;
 
+    thread = thread_create( lua_image_thread, NULL, "image thread", THREAD_STACK_SIZE_DEFAULT );
+    struct sched_param params;
+    params.sched_priority = sched_get_priority_min(SCHED_FIFO);
+    pthread_setschedparam((pthread_t)thread, SCHED_FIFO, &params);
+    return 0;
+}
+
+int luaimage_stop_threads(void) {
+    image_q q;
+    q.table_ref = -1;
+    thread_queue_produce(&thread_queue,&q);
+    qsize++;
+    wake_queue();
+    thread_join(thread);
+    thread_destroy(thread);
+    thread_queue_term(&thread_queue);
+    thread_signal_term(&t_signal);
+}
+
+int luaopen_image(lua_State *L) {
     luaL_newmetatable(L,"image");
     lua_newtable(L);
     luaL_setfuncs(L,lua_image_image_methods,0);
@@ -1099,26 +1119,11 @@ int luaopen_image(lua_State *L, thread_queue_t *ret) {
         strerr_die2x(1,"Error running image.lua: ",lua_tostring(L,-1));
     }
 
-    thread = thread_create( lua_image_thread, NULL, "image thread", THREAD_STACK_SIZE_DEFAULT );
-    struct sched_param params;
-    params.sched_priority = sched_get_priority_min(SCHED_FIFO);
-    pthread_setschedparam((pthread_t)thread, SCHED_FIFO, &params);
-    
-
     return 0;
 }
 
 int luaclose_image() {
-    image_q q;
-    q.table_ref = -1;
-    thread_queue_produce(&thread_queue,&q);
-    qsize++;
-    wake_queue();
-    thread_join(thread);
-    thread_destroy(thread);
-    thread_queue_term(&thread_queue);
-    thread_signal_term(&t_signal);
-
+    luaimage_stop_threads();
     return 0;
 }
 

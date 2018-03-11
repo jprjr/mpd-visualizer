@@ -85,6 +85,9 @@ int
 audio_processor_init(audio_processor *processor);
 
 int
+audio_processor_reload(audio_processor *processor);
+
+int
 audio_processor_free(audio_processor *processor);
 
 void audio_processor_fftw(audio_processor *processor);

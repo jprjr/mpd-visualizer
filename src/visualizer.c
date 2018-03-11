@@ -9,7 +9,7 @@
 #include <sched.h>
 
 #include "audio.h"
-#include "visualizer.h"
+#include "visualizer-int.h"
 #include "stream.lua.lh"
 #include "font.lua.lh"
 #include "tinydir.h"
@@ -65,7 +65,8 @@ visualizer_set_image_cb(void (*lua_image_cb)(lua_State *L, intptr_t table_ref, u
     global_vis->lua_image_cb = lua_image_cb;
 }
 
-static void lua_func_list_free(visualizer *vis, genalloc *list) {
+static void
+lua_func_list_free(visualizer *vis, genalloc *list) {
     unsigned long i;
     for(i=0;i<func_list_len(list);i++) {
         if(func_list_s(list)[i].frame_ref != -1) {
@@ -80,7 +81,8 @@ static void lua_func_list_free(visualizer *vis, genalloc *list) {
     func_list_free(list);
 }
 
-void visualizer_load_scripts(visualizer *vis) {
+static void
+visualizer_load_scripts(visualizer *vis) {
     tinydir_dir dir;
     unsigned long int i;
 
@@ -172,7 +174,7 @@ void visualizer_load_scripts(visualizer *vis) {
 
 }
 
-int
+static int
 visualizer_free(visualizer *vis) {
     lua_func_list_free(vis, &(vis->lua_funcs));
     thread_queue_term(&(vis->image_queue));
@@ -191,7 +193,8 @@ visualizer_free(visualizer *vis) {
     return 0;
 }
 
-int visualizer_grab_audio(visualizer *vis, int fd) {
+static int
+visualizer_grab_audio(visualizer *vis, int fd) {
     int bytes_read = 0;
     int samples_read = 0;
     bytes_read = fd_read(fd,vis->buffer,vis->bytes_to_read);
@@ -322,7 +325,8 @@ static void visualizer_get_metadata(visualizer *vis) {
     mpd_response_finish(vis->mpd_conn);
 }
 
-int visualizer_write_frame(visualizer *vis, int fd) {
+static int
+visualizer_write_frame(visualizer *vis, int fd) {
     int bytes = 0;
     if(fd == -1) {
         return 0;
@@ -344,8 +348,8 @@ int visualizer_write_frame(visualizer *vis, int fd) {
     return 1;
 }
 
-
-int visualizer_make_frames(visualizer *vis) {
+static int
+visualizer_make_frames(visualizer *vis) {
     int frames = 0;
     unsigned long i = 0;
     image_q *q = NULL;
@@ -405,6 +409,43 @@ int visualizer_make_frames(visualizer *vis) {
 }
 
 int
+visualizer_reload(visualizer *vis) {
+    vis->fds[0].fd = selfpipe_init();
+    if(selfpipe_trap(SIGINT) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGINT: ");
+    }
+    if(selfpipe_trap(SIGTERM) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGTERM: ");
+    }
+    if(selfpipe_trap(SIGPIPE) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGPIPE: ");
+    }
+    if(selfpipe_trap(SIGUSR1) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGUSR1: ");
+    }
+    if(selfpipe_trap(SIGUSR2) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGUSR1: ");
+    }
+    global_vis = vis;
+    luaimage_setup_threads(&(vis->image_queue));
+    audio_processor_reload(&(vis->processor));
+    return 1;
+}
+
+int
+visualizer_unload(visualizer *vis) {
+    (void)(vis);
+    selfpipe_untrap(SIGINT);
+    selfpipe_untrap(SIGTERM);
+    selfpipe_untrap(SIGPIPE);
+    selfpipe_untrap(SIGUSR1);
+    selfpipe_untrap(SIGUSR2);
+    selfpipe_finish();
+    luaimage_stop_threads();
+    return 1;
+}
+
+int
 visualizer_init(visualizer *vis,
                 unsigned int video_width,
                 unsigned int video_height,
@@ -420,10 +461,18 @@ visualizer_init(visualizer *vis,
 
     global_vis = vis;
 
-    vis->lua_image_cb = &lua_load_image_cb;
+    pthread_t this_thread = pthread_self();
+    struct sched_param sparams;
+    struct stat st;
+
+    sparams.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    pthread_setschedparam(this_thread,SCHED_FIFO,&sparams);
+
     vis->input_fifo = input_fifo;
     vis->output_fifo = output_fifo;
     vis->lua_folder = lua_folder;
+
+    visualizer_set_image_cb(lua_load_image_cb);
 
     thread_queue_init(&(vis->image_queue),100,(void **)&(vis->images),0);
 
@@ -435,6 +484,7 @@ visualizer_init(visualizer *vis,
         samplerate,
         channels,
         samplesize)) {
+        fprintf(stderr,"Error initializing AVI stream\n");
         return visualizer_free(vis);
     }
 
@@ -445,6 +495,7 @@ visualizer_init(visualizer *vis,
     vis->processor.spectrum_len = bars;
 
     if(!audio_processor_init(&(vis->processor))) {
+        fprintf(stderr,"Error initializing audio processor\n");
         return visualizer_free(vis);
     }
 
@@ -452,6 +503,7 @@ visualizer_init(visualizer *vis,
 
     vis->buffer = (char *)malloc(vis->buffer_len);
     if(!vis->buffer) {
+        fprintf(stderr,"Error mallocing buffer\n");
         visualizer_free(vis);
         return 0;
     }
@@ -472,12 +524,13 @@ visualizer_init(visualizer *vis,
     vis->Lua = 0;
     vis->Lua = luaL_newstate();
     if(!vis->Lua) {
+        fprintf(stderr,"Error loading Lua\n");
         visualizer_free(vis);
         return 0;
     }
 
     luaL_openlibs(vis->Lua);
-    luaopen_image(vis->Lua,&(vis->image_queue));
+    luaopen_image(vis->Lua);
     luaopen_file(vis->Lua);
 
     if(luaL_loadbuffer(vis->Lua,font_lua,font_lua_length-1,"font.lua")) {
@@ -534,153 +587,149 @@ visualizer_init(visualizer *vis,
 
     if(vis->lua_folder) visualizer_load_scripts(vis);
 
+    luaimage_setup_threads(&(vis->image_queue));
+
+    vis->fds[0].fd = selfpipe_init();
+    vis->fds[0].events = IOPAUSE_READ;
+
+    if(vis->fds[0].fd < 0) {
+        strerr_die1sys(1,"Unable to create selfpipe");
+    }
+
+    if(selfpipe_trap(SIGINT) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGINT: ");
+    }
+    if(selfpipe_trap(SIGTERM) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGTERM: ");
+    }
+    if(selfpipe_trap(SIGPIPE) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGPIPE: ");
+    }
+    if(selfpipe_trap(SIGUSR1) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGUSR1: ");
+    }
+    if(selfpipe_trap(SIGUSR2) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGUSR1: ");
+    }
+
+    vis->own_fifo = mkfifo(vis->output_fifo,
+      S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
+
+    if(vis->own_fifo < 0) {
+        if(stat(vis->output_fifo,&st) == 0) {
+            if(!S_ISFIFO(st.st_mode)) {
+                strerr_die3x(1,"Output path ",vis->output_fifo," exists and is not a fifo");
+            }
+            else {
+                vis->own_fifo = 0;
+            }
+        }
+    }
+    else {
+        vis->own_fifo = 1;
+    }
+
+    if(vis->own_fifo < 0) {
+        strerr_die3x(1,"Problem opening ", vis->output_fifo," for file writing");
+    }
+
+    vis->fds[1].fd = open_read(vis->input_fifo);
+    if(vis->fds[1].fd == -1) {
+        strerr_die3sys(1,"Problem opening ",vis->input_fifo,": ");
+    }
+    vis->fds[1].events = IOPAUSE_READ;
+
+    vis->nanosecs_per_frame /=  vis->stream.framerate;
+
     return 1;
 
 }
 
 int
 visualizer_loop(visualizer *vis) {
-    int own_fifo = -1;
-    unsigned int fdnum = 2;
-    struct sched_param sparams;
-    struct stat st;
     int events = 0;
     int signal = 0;
     int frame = 0;
+    int fdnum = 2;
 
-    pthread_t this_thread = pthread_self();
-
-    uint32_t nanosecs_per_frame = 1000000000;
-    nanosecs_per_frame /=  vis->stream.framerate;
-
-    iopause_fd fds[3];
-
-    fds[0].fd = selfpipe_init();
-    fds[0].events = IOPAUSE_READ;
-
-    if(fds[0].fd < 0) {
-        strerr_die1sys(1,"Unable to create selfpipe");
+    if(vis->fds[2].fd != -1) {
+        fdnum = 3;
     }
 
-    if(selfpipe_trap(SIGINT) < 0) {
-        strerr_warn1sys("Unable to trap SIGINT: ");
+    if(vis->fds[2].fd == -1) {
+        vis->fds[2].fd = open_write(vis->output_fifo);
+        if(vis->fds[2].fd > -1) {
+            fdnum = 3;
+            vis->fds[2].revents = 0;
+            vis->fds[2].events = IOPAUSE_EXCEPT;
+            ndelay_off(vis->fds[2].fd);
+            avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
+        }
+
     }
-    if(selfpipe_trap(SIGTERM) < 0) {
-        strerr_warn1sys("Unable to trap SIGTERM: ");
-    }
-    if(selfpipe_trap(SIGPIPE) < 0) {
-        strerr_warn1sys("Unable to trap SIGPIPE: ");
-    }
-    if(selfpipe_trap(SIGUSR1) < 0) {
-        strerr_warn1sys("Unable to trap SIGUSR1: ");
-    }
 
-    sparams.sched_priority = sched_get_priority_max(SCHED_FIFO);
-    pthread_setschedparam(this_thread,SCHED_FIFO,&sparams);
+    events = iopause_stamp(vis->fds,fdnum,0,0);
 
-    fds[1].fd = -1;
-    fds[1].events = 0;
+    if(events && vis->fds[0].revents & IOPAUSE_READ) {
+        signal = selfpipe_read();
+        switch(signal) {
+            case SIGINT: return -1;
+            case SIGTERM: return -1;
+            case SIGUSR1: {
+                strerr_warn1x("Reloading images/scripts");
+                visualizer_load_scripts(vis);
+                break;
 
-    fds[2].fd = -1;
-    fds[2].events = 0;
-
-    own_fifo = mkfifo(vis->output_fifo,
-      S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
-
-    if(own_fifo < 0) {
-        if(stat(vis->output_fifo,&st) == 0) {
-            if(!S_ISFIFO(st.st_mode)) {
-                strerr_die3x(1,"Output path ",vis->output_fifo," exists and is not a fifo");
             }
-            else {
-                own_fifo = 0;
+            case SIGUSR2: {
+                vis->reload = 1;
+                break;
             }
         }
     }
-    else {
-        own_fifo = 1;
+
+    if(events && vis->fds[1].revents & IOPAUSE_READ) {
+        if(visualizer_grab_audio(vis,vis->fds[1].fd) <= 0) return -1;
     }
 
-    if(own_fifo < 0) {
-        strerr_die3x(1,"Problem opening ", vis->output_fifo," for file writing");
+    visualizer_make_frames(vis);
+
+    if(cbuffer_len(&(vis->stream.frames)) >= vis->stream.frame_len) {
+        frame = visualizer_write_frame(vis,vis->fds[2].fd);
+        if(frame == -1) {
+            goto closefifo;
+        }
     }
 
-    fds[1].fd = open_read(vis->input_fifo);
-    if(fds[1].fd == -1) {
-        strerr_die3sys(1,"Problem opening ",vis->input_fifo,": ");
-    }
-    fds[1].events = IOPAUSE_READ;
-
-    while( 1 ) {
-        if(fdnum == 2) {
-            fds[2].fd = open_write(vis->output_fifo);
-            if(fds[2].fd > -1) {
-                fdnum = 3;
-                fds[2].revents = 0;
-                fds[2].events = IOPAUSE_EXCEPT;
-                ndelay_off(fds[2].fd);
-                avi_stream_write_header(&(vis->stream),fds[2].fd);
-            }
-
-        }
-
-        events = iopause_stamp(fds,fdnum,0,0);
-
-        if(events && fds[0].revents & IOPAUSE_READ) {
-            signal = selfpipe_read();
-            switch(signal) {
-                case SIGINT: goto cleanup;
-                case SIGTERM: goto cleanup;
-                case SIGUSR1: {
-                    strerr_warn1x("Reloading images/scripts");
-                    visualizer_load_scripts(vis);
-                    break;
-
-                }
-            }
-        }
-
-        if(events && fds[1].revents & IOPAUSE_READ) {
-            if(visualizer_grab_audio(vis,fds[1].fd) <= 0) goto breakout;
-        }
-
-        visualizer_make_frames(vis);
-
-        if(cbuffer_len(&(vis->stream.frames)) >= vis->stream.frame_len) {
-            frame = visualizer_write_frame(vis,fds[2].fd);
-            if(frame == -1) {
-                goto closefifo;
-            }
-        }
-
-        if(events && fds[2].revents & IOPAUSE_EXCEPT) {
-            closefifo:
-            fdnum = 2;
-            fd_close(fds[2].fd);
-            fds[2].fd = -1;
-            fds[2].revents = 0;
-            fds[2].events = 0;
-            vis->stream.output_frame_len = 0;
-        }
-
-        lua_gc(vis->Lua,LUA_GCCOLLECT,0);
+    if(events && vis->fds[2].revents & IOPAUSE_EXCEPT) {
+        closefifo:
+        fdnum = 2;
+        fd_close(vis->fds[2].fd);
+        vis->fds[2].fd = -1;
+        vis->fds[2].revents = 0;
+        vis->fds[2].events = 0;
+        vis->stream.output_frame_len = 0;
+        frame = 0;
     }
 
-    breakout:
-    if(visualizer_make_frames(vis) && fds[2].fd != -1) {
-        while(visualizer_write_frame(vis,fds[2].fd) > 0) {};
-        fd_close(fds[2].fd);
+    lua_gc(vis->Lua,LUA_GCCOLLECT,0);
+
+    return frame;
+}
+
+int visualizer_cleanup(visualizer *vis) {
+
+    if(visualizer_make_frames(vis) && vis->fds[2].fd != -1) {
+        while(visualizer_write_frame(vis,vis->fds[2].fd) > 0) {};
+        fd_close(vis->fds[2].fd);
     }
 
-    cleanup:
-    fd_close(fds[0].fd);
-    fd_close(fds[1].fd);
+    fd_close(vis->fds[0].fd);
+    fd_close(vis->fds[1].fd);
     visualizer_free(vis);
-    if(own_fifo) unlink(vis->output_fifo);
+    if(vis->own_fifo) unlink(vis->output_fifo);
 
     return 0;
-
-
 }
 
 #ifdef __cplusplus

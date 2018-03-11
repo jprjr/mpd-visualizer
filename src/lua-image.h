@@ -28,7 +28,7 @@ extern "C" {
 #endif
 
 int
-luaopen_image(lua_State *L, thread_queue_t *ret);
+luaopen_image(lua_State *L);
 
 int
 luaclose_image();
@@ -40,6 +40,12 @@ void
 queue_image_load(intptr_t table_ref,const char* filename, unsigned int width, unsigned int height, unsigned int channels);
 
 void wake_queue(void);
+
+int
+luaimage_setup_threads(thread_queue_t *ret);
+
+int
+luaimage_stop_threads(void);
 
 #ifdef __cplusplus
 }
