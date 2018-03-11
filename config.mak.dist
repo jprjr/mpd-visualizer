@@ -1,48 +1,21 @@
 HOSTCC = gcc
 CC = gcc
+AR = ar
 PKGCONFIG = pkg-config
 
 CFLAGS_OPTIMIZE = -pedantic -g0 -O3 -fPIC -march=native
 
-LUA = luajit
+LUA=luajit
 
-# extension for shared libraries
-# linux
-SO_EXT = .so
-# macos
-# SO_EXT = .dylib
-
-# prefix used for shared libraries
-# macos, linux
-SO_PREFIX = lib
-
-# extension for executables
-# linux, macos
-EXE_EXT =
-
-# LDFLAGS for the shared library
-# most systems
-LDFLAGS_SO = -lskarnet -lm
-LDFLAGS_SO += $(shell $(PKGCONFIG) --libs fftw3)
-LDFLAGS_SO += $(shell $(PKGCONFIG) --libs libmpdclient)
-LDFLAGS_SO += $(shell $(PKGCONFIG) --libs-only-L --libs-only-l $(LUA))
-LDFLAGS_SO += -Wl,-rpath,$(shell $(PKGCONFIG) --variable=libdir libmpdclient)
-
-# additional flags for macos
-# LDFLAGS_SO += -Wl,-install_name,@executable_path/$(SO_PREFIX)visualizer$(SO_EXT)
-
-
-# LDFLAGS for the executable
-# linux
-LDFLAGS = -lskarnet -ldl
-# macos
-# LDFLAGS = -lskarnet -ldl
-# macos w/ luajit
-# LDFLAGS += -pagezero_size 10000 -image_base 100000000
-
-# CFLAGS, applies to all
 CFLAGS = $(shell $(PKGCONFIG) --cflags fftw3)
 CFLAGS += $(shell $(PKGCONFIG) --cflags libmpdclient)
 CFLAGS += $(shell $(PKGCONFIG) --cflags $(LUA))
 CFLAGS += -Wall -Wextra $(CFLAGS_OPTIMIZE)
 CFLAGS += -D_GNU_SOURCE
+
+LDFLAGS = -lskarnet -lm
+LDFLAGS += -Wl,-rpath,$(shell $(PKGCONFIG) --variable=libdir libmpdclient)
+LDFLAGS += $(shell $(PKGCONFIG) --libs fftw3)
+LDFLAGS += $(shell $(PKGCONFIG) --libs libmpdclient)
+LDFLAGS += $(shell $(PKGCONFIG) --libs $(LUA))
+

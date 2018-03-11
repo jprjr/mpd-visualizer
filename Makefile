@@ -48,10 +48,10 @@ MAINSRCS = src/main.c
 
 BIN2CSRC = src/bin2c.c
 
-all: mpd-visualizer$(EXE_EXT)
+all: mpd-visualizer
 
-mpd-visualizer$(EXE_EXT): $(SO_PREFIX)visualizer$(SO_EXT) src/main.c src/whereami.c
-	$(CC) $(CFLAGS) -DSO_PREFIX=\"$(SO_PREFIX)\" -DSO_EXT=\"$(SO_EXT)\" -o mpd-visualizer$(EXE_EXT) -I src src/main.c src/whereami.c $(LDFLAGS) -pthread
+mpd-visualizer: src/libvisualizer.a src/main.c
+	$(CC) $(CFLAGS) -o mpd-visualizer src/main.c -Lsrc -rdynamic -lvisualizer $(LDFLAGS) -pthread
 
 src/%.o: src/%.c $(LUALHS)
 	$(CC) $(CFLAGS) -o $@ -c $<
@@ -59,12 +59,12 @@ src/%.o: src/%.c $(LUALHS)
 src/%.lh: lua/% src/bin2c
 	./src/bin2c $< $@ $(patsubst %.lua,%_lua,$(notdir $<))
 
-$(SO_PREFIX)visualizer$(SO_EXT): $(LIBOBJS)
-	$(CC) -shared -o $@ $^ $(LDFLAGS_SO)
+src/libvisualizer.a: $(LIBOBJS)
+	$(AR) rcs $@ $^
 
-src/bin2c$(EXE_EXT): src/bin2c.c
-	$(HOSTCC) -o src/bin2c$(EXE_EXT) src/bin2c.c
+src/bin2c: src/bin2c.c
+	$(HOSTCC) -o src/bin2c src/bin2c.c
 
 clean:
-	rm -f mpd-visualizer$(EXE_EXT) $(SO_PREFIX)visualizer$(SO_EXT) src/bin2c$(EXE_EXT) $(LIBOBJS) $(LUALHS)
+	rm -f mpd-visualizer src/libvisualizer.a src/bin2c $(LIBOBJS) $(LUALHS)
 

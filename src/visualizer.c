@@ -690,16 +690,16 @@ visualizer_loop(visualizer *vis) {
 
     if(events && vis->fds[1].revents & IOPAUSE_READ) {
         if(visualizer_grab_audio(vis,vis->fds[1].fd) <= 0) return -1;
-    }
-
-    visualizer_make_frames(vis);
-
-    if(cbuffer_len(&(vis->stream.frames)) >= vis->stream.frame_len) {
-        frame = visualizer_write_frame(vis,vis->fds[2].fd);
-        if(frame == -1) {
-            goto closefifo;
+        visualizer_make_frames(vis);
+        lua_gc(vis->Lua,LUA_GCCOLLECT,0);
+        if(cbuffer_len(&(vis->stream.frames)) >= vis->stream.frame_len && vis->fds[2].fd != -1) {
+            frame = visualizer_write_frame(vis,vis->fds[2].fd);
+            if(frame == -1) {
+                goto closefifo;
+            }
         }
     }
+
 
     if(events && vis->fds[2].revents & IOPAUSE_EXCEPT) {
         closefifo:
@@ -712,7 +712,6 @@ visualizer_loop(visualizer *vis) {
         frame = 0;
     }
 
-    lua_gc(vis->Lua,LUA_GCCOLLECT,0);
 
     return frame;
 }

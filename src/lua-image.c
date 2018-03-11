@@ -1093,6 +1093,7 @@ int luaimage_stop_threads(void) {
     thread_destroy(thread);
     thread_queue_term(&thread_queue);
     thread_signal_term(&t_signal);
+    return 0;
 }
 
 int luaopen_image(lua_State *L) {
