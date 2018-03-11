@@ -15,6 +15,13 @@
 typedef struct visualizer {
     avi_stream stream;
     audio_processor processor;
+    unsigned int video_width;
+    unsigned int video_height;
+    unsigned int framerate;
+    unsigned int samplerate;
+    unsigned int channels;
+    unsigned int samplesize;
+    unsigned int bars;
     const char *lua_folder;
     const char *input_fifo;
     const char *output_fifo;
@@ -58,6 +65,13 @@ typedef struct visualizer {
   .own_fifo = -1, \
   .nanosecs_per_frame = 1000000000 , \
   .reload = 0, \
+  .video_width = 0, \
+  .video_height = 0, \
+  .framerate = 0, \
+  .samplerate = 0, \
+  .channels = 0, \
+  .samplesize = 0, \
+  .bars = 0, \
 }
 
 #ifdef __cplusplus
@@ -65,17 +79,7 @@ extern "C" {
 #endif
 
 int
-visualizer_init(visualizer *vis,
-                unsigned int video_width,
-                unsigned int video_height,
-                unsigned int framerate,
-                unsigned int samplerate,
-                unsigned int channels,
-                unsigned int samplesize,
-                unsigned int bars,
-                const char *input_fifo,
-                const char *output_fifo,
-                const char *lua_folder);
+visualizer_init(visualizer *vis);
 
 int
 visualizer_loop(visualizer *vis);

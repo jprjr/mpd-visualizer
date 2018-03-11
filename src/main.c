@@ -28,17 +28,6 @@ int main(int argc, char const *const *argv) {
     visualizer _vis = VISUALIZER_ZERO;
     visualizer *vis = &_vis;
 
-    unsigned int video_width = 0;
-    unsigned int video_height = 0;
-    unsigned int framerate = 0;
-    unsigned int samplerate = 0;
-    unsigned int channels = 0;
-    unsigned int samplesize = 0;
-    unsigned int bars = 0;
-
-    const char *input_path  = NULL;
-    const char *output_path = NULL;
-    const char *lua_folder  = NULL;
     int loopres = 0;
 
     char opt = 0;
@@ -48,74 +37,50 @@ int main(int argc, char const *const *argv) {
     while((opt = subgetopt_r(argc,argv,"w:h:f:r:c:s:b:i:o:l:",&l)) != -1 ) {
         switch(opt) {
             case 'w': {
-                if(!uint_scan(l.arg,&video_width)) dieusage();
+                if(!uint_scan(l.arg,&(vis->video_width))) dieusage();
                 break;
             }
             case 'h': {
-                if(!uint_scan(l.arg,&video_height)) dieusage();
+                if(!uint_scan(l.arg,&(vis->video_height))) dieusage();
                 break;
             }
             case 'f': {
-                if(!uint_scan(l.arg,&framerate)) dieusage();
+                if(!uint_scan(l.arg,&(vis->framerate))) dieusage();
                 break;
             }
             case 'r': {
-                if(!uint_scan(l.arg,&samplerate)) dieusage();
+                if(!uint_scan(l.arg,&(vis->samplerate))) dieusage();
                 break;
             }
             case 'c': {
-                if(!uint_scan(l.arg,&channels)) dieusage();
+                if(!uint_scan(l.arg,&(vis->channels))) dieusage();
                 break;
             }
             case 'b': {
-                if(!uint_scan(l.arg,&bars)) dieusage();
+                if(!uint_scan(l.arg,&(vis->bars))) dieusage();
                 break;
             }
             case 's': {
-                if(!uint_scan(l.arg,&samplesize)) dieusage();
+                if(!uint_scan(l.arg,&(vis->samplesize))) dieusage();
                 break;
             }
             case 'i': {
-                input_path = l.arg;
+                vis->input_fifo = l.arg;
                 break;
             }
             case 'o': {
-                output_path = l.arg;
+                vis->output_fifo = l.arg;
                 break;
             }
             case 'l': {
-                lua_folder = l.arg;
+                vis->lua_folder = l.arg;
                 break;
             }
             default: dieusage();
         }
     }
-    if(
-        !video_width ||
-        !video_height ||
-        !framerate ||
-        !samplerate ||
-        !channels ||
-        !samplesize ||
-        !input_path ||
-        !bars ||
-        !input_path ||
-        !output_path ) dieusage();
 
-
-    if(!visualizer_init(vis,
-                        video_width,
-                        video_height,
-                        framerate,
-                        samplerate,
-                        channels,
-                        samplesize,
-                        bars,
-                        input_path,
-                        output_path,
-                        lua_folder)) {
-        strerr_die1x(1,"Unable to create visualizer");
-    }
+    if(!visualizer_init(vis)) dieusage();
 
     while((loopres = visualizer_loop(vis)) != -1) {
     }

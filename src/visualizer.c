@@ -446,18 +446,18 @@ visualizer_unload(visualizer *vis) {
 }
 
 int
-visualizer_init(visualizer *vis,
-                unsigned int video_width,
-                unsigned int video_height,
-                unsigned int framerate,
-                unsigned int samplerate,
-                unsigned int channels,
-                unsigned int samplesize,
-                unsigned int bars,
-                const char *input_fifo,
-                const char *output_fifo,
-                const char *lua_folder) {
+visualizer_init(visualizer *vis) {
     if(!vis) return 0;
+    if(
+        !vis->video_width ||
+        !vis->video_height ||
+        !vis->framerate ||
+        !vis->samplerate ||
+        !vis->channels ||
+        !vis->samplesize ||
+        !vis->bars ||
+        !vis->input_fifo ||
+        !vis->output_fifo ) return 0;
 
     global_vis = vis;
 
@@ -468,38 +468,34 @@ visualizer_init(visualizer *vis,
     sparams.sched_priority = sched_get_priority_max(SCHED_FIFO);
     pthread_setschedparam(this_thread,SCHED_FIFO,&sparams);
 
-    vis->input_fifo = input_fifo;
-    vis->output_fifo = output_fifo;
-    vis->lua_folder = lua_folder;
-
     visualizer_set_image_cb(lua_load_image_cb);
 
     thread_queue_init(&(vis->image_queue),100,(void **)&(vis->images),0);
 
     if(!avi_stream_init(
         &(vis->stream),
-        video_width,
-        video_height,
-        framerate,
-        samplerate,
-        channels,
-        samplesize)) {
+        vis->video_width,
+        vis->video_height,
+        vis->framerate,
+        vis->samplerate,
+        vis->channels,
+        vis->samplesize)) {
         fprintf(stderr,"Error initializing AVI stream\n");
         return visualizer_free(vis);
     }
 
-    vis->processor.framerate = framerate;
-    vis->processor.channels = channels;
-    vis->processor.samplerate = samplerate;
-    vis->processor.samplesize = samplesize;
-    vis->processor.spectrum_len = bars;
+    vis->processor.framerate    = vis->framerate;
+    vis->processor.channels     = vis->channels;
+    vis->processor.samplerate   = vis->samplerate;
+    vis->processor.samplesize   = vis->samplesize;
+    vis->processor.spectrum_len = vis->bars;
 
     if(!audio_processor_init(&(vis->processor))) {
         fprintf(stderr,"Error initializing audio processor\n");
         return visualizer_free(vis);
     }
 
-    vis->buffer_len = sizeof(uint8_t) * samplerate * channels * samplesize * 4;
+    vis->buffer_len = vis->samplerate * vis->channels * vis->samplesize * 4;
 
     vis->buffer = (char *)malloc(vis->buffer_len);
     if(!vis->buffer) {
@@ -508,7 +504,7 @@ visualizer_init(visualizer *vis,
         return 0;
     }
 
-    vis->bytes_to_read = (samplerate / framerate) * channels * samplesize * 4;
+    vis->bytes_to_read = (vis->samplerate / vis->framerate) * vis->channels * vis->samplesize * 4;
 
     vis->mpd_conn = mpd_connection_new(0,0,0);
     if(!vis->mpd_conn) {
@@ -551,8 +547,8 @@ visualizer_init(visualizer *vis,
     lua_getglobal(vis->Lua,"image");
     lua_getfield(vis->Lua,-1,"new");
     lua_pushnil(vis->Lua);
-    lua_pushinteger(vis->Lua,video_width);
-    lua_pushinteger(vis->Lua,video_height);
+    lua_pushinteger(vis->Lua,vis->video_width);
+    lua_pushinteger(vis->Lua,vis->video_height);
     lua_pushinteger(vis->Lua,3);
     if(lua_pcall(vis->Lua,4,1,0)) {
         strerr_die2x(1,"Error creating stream image: ",lua_tostring(vis->Lua,-1));
@@ -561,7 +557,7 @@ visualizer_init(visualizer *vis,
     lua_getfield(vis->Lua,-1,"frames");
     lua_rawgeti(vis->Lua,-1,1);
 
-    lua_pushinteger(vis->Lua,framerate);
+    lua_pushinteger(vis->Lua,vis->framerate);
     lua_setfield(vis->Lua,-2,"framerate");
 
     lua_pushlightuserdata(vis->Lua,vis->stream.video_frame);
