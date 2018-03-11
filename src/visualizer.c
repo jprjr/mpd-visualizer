@@ -629,6 +629,7 @@ visualizer_init(visualizer *vis,
         else {
             vis->own_fifo = 1;
         }
+        fd_close(fileno(stdout));
     }
     else {
         vis->own_fifo = 0;
@@ -645,6 +646,7 @@ visualizer_init(visualizer *vis,
         if(vis->fds[1].fd == -1) {
             strerr_die3sys(1,"Problem opening ",vis->input_fifo,": ");
         }
+        fd_close(fileno(stdin));
     }
     else {
         vis->fds[1].fd = fileno(stdin);
@@ -720,11 +722,14 @@ visualizer_loop(visualizer *vis) {
         closefifo:
         fdnum = 2;
         fd_close(vis->fds[2].fd);
-        vis->fds[2].fd = -1;
         vis->fds[2].revents = 0;
         vis->fds[2].events = 0;
         vis->stream.output_frame_len = 0;
         frame = 0;
+        if(vis->fds[2].fd == fileno(stdout)) {
+            return -1;
+        }
+        vis->fds[2].fd = -1;
     }
 
 
