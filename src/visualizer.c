@@ -640,9 +640,15 @@ visualizer_init(visualizer *vis,
         strerr_die3x(1,"Problem opening ", vis->output_fifo," for file writing");
     }
 
-    vis->fds[1].fd = open_read(vis->input_fifo);
-    if(vis->fds[1].fd == -1) {
-        strerr_die3sys(1,"Problem opening ",vis->input_fifo,": ");
+    if(strcmp(vis->input_fifo,"-") != 0) {
+        vis->fds[1].fd = open_read(vis->input_fifo);
+        if(vis->fds[1].fd == -1) {
+            strerr_die3sys(1,"Problem opening ",vis->input_fifo,": ");
+        }
+    }
+    else {
+        vis->fds[1].fd = fileno(stdin);
+        ndelay_on(vis->fds[1].fd);
     }
     vis->fds[1].events = IOPAUSE_READ;
 
