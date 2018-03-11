@@ -6,7 +6,6 @@
 #include <unistd.h>
 #include <dlfcn.h>
 #include "visualizer.h"
-#include "whereami.h"
 
 #define USAGE  "Usage: visualizer (options)\n" \
                "Options:\n" \
