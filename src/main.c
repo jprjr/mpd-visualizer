@@ -4,8 +4,6 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
-#include <pthread.h>
-#include <sched.h>
 #include "visualizer.h"
 
 #define USAGE  "Usage: visualizer (options)\n" \
@@ -27,10 +25,6 @@ int main(int argc, char const *const *argv) {
     visualizer _vis = VISUALIZER_ZERO;
     visualizer *vis = &_vis;
 
-    int own_fifo = -1;
-    pthread_t this_thread = pthread_self();
-    struct sched_param sparams;
-
     unsigned int video_width = 0;
     unsigned int video_height = 0;
     unsigned int framerate = 0;
@@ -38,49 +32,12 @@ int main(int argc, char const *const *argv) {
     unsigned int channels = 0;
     unsigned int samplesize = 0;
     unsigned int bars = 0;
-    unsigned int fdnum = 2;
 
     const char *input_path  = NULL;
     const char *output_path = NULL;
     const char *lua_folder  = NULL;
 
-    struct stat st;
-    int events = 0;
-    int signal = 0;
-
-    unsigned int frames_made = 0;
-    unsigned int frame_counter = 0;
-
-    tain_t now = TAIN_ZERO;
-    tain_t diff= TAIN_ZERO;
-
     char opt = 0;
-
-    double average_fps = 0.0f;
-    double desired_fps = 0.0f;
-
-    iopause_fd fds[3];
-
-    fds[0].fd = selfpipe_init();
-    fds[0].events = IOPAUSE_READ;
-
-    if(fds[0].fd < 0) {
-        strerr_die1sys(1,"Unable to create selfpipe");
-    }
-    if(selfpipe_trap(SIGINT) < 0)
-        strerr_warn1sys("Unable to trap SIGINT: ");
-    if(selfpipe_trap(SIGTERM) < 0)
-        strerr_warn1sys("Unable to trap SIGTERM: ");
-    if(selfpipe_trap(SIGPIPE) < 0)
-        strerr_warn1sys("Unable to trap SIGPIPE: ");
-    if(selfpipe_trap(SIGUSR1) < 0)
-        strerr_warn1sys("Unable to trap SIGUSR1: ");
-
-    fds[1].fd = -1;
-    fds[1].events = 0;
-
-    fds[2].fd = -1;
-    fds[2].events = 0;
 
     subgetopt_t l = SUBGETOPT_ZERO;
 
@@ -138,9 +95,8 @@ int main(int argc, char const *const *argv) {
         !samplesize ||
         !input_path ||
         !bars ||
+        !input_path ||
         !output_path ) dieusage();
-    average_fps = (double)framerate;
-    desired_fps = 1000.0f * average_fps;
 
     if(!visualizer_init(vis,
                         video_width,
@@ -150,123 +106,12 @@ int main(int argc, char const *const *argv) {
                         channels,
                         samplesize,
                         bars,
+                        input_path,
                         output_path,
                         lua_folder)) {
         strerr_die1x(1,"Unable to create visualizer");
     }
 
-    sparams.sched_priority = sched_get_priority_max(SCHED_FIFO);
-    pthread_setschedparam(this_thread,SCHED_FIFO,&sparams);
+    return visualizer_loop(vis);
 
-    own_fifo = mkfifo(output_path,
-      S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
-
-    if(own_fifo < 0) {
-        if(stat(output_path,&st) == 0) {
-            if(!S_ISFIFO(st.st_mode)) {
-                strerr_die3x(1,"Output path ",output_path," exists and is not a fifo");
-            }
-            else {
-                own_fifo = 0;
-            }
-        }
-    }
-    else {
-        own_fifo = 1;
-    }
-
-    if(own_fifo < 0) {
-        strerr_die3x(1,"Problem opening ", output_path," for file writing");
-    }
-
-    fds[1].fd = open_read(input_path);
-    if(fds[1].fd == -1) {
-        strerr_die3sys(1,"Problem opening ",input_path,": ");
-    }
-    fds[1].events = IOPAUSE_READ;
-
-    tain_clockmon_init(vis->tain_offset);
-    tain_clockmon(vis->tain_last,vis->tain_offset);
-
-    while( 1 ) {
-        if(fdnum == 2) {
-            fds[2].fd = open_write(vis->output_fifo);
-            if(fds[2].fd > -1) {
-                fdnum = 3;
-                fds[2].revents = 0;
-                fds[2].events = IOPAUSE_WRITE | IOPAUSE_EXCEPT;
-                ndelay_off(fds[2].fd);
-                avi_stream_write_header(&(vis->stream),fds[2].fd);
-            }
-
-        }
-
-        do {
-            frames_made = visualizer_make_frames(vis);
-            frame_counter += frames_made;
-        } while (frames_made > 0);
-
-        /* select()-based iopause returns IOPAUSE_EXCEPT
-         * if the data read was incomplete */
-        events = iopause_stamp(fds,fdnum,0,&now);
-        if(events && fds[0].revents & IOPAUSE_READ) {
-            signal = selfpipe_read();
-            switch(signal) {
-                case SIGINT: goto cleanup;
-                case SIGTERM: goto cleanup;
-                case SIGUSR1: {
-                    strerr_warn1x("Reloading images/scripts");
-                    visualizer_load_scripts(vis);
-                    break;
-
-                }
-            }
-        }
-
-
-        if(events && fds[1].revents & IOPAUSE_READ) {
-            if(visualizer_grab_audio(vis,fds[1].fd) <= 0) goto breakout;
-        }
-
-        if(events && fds[2].revents & IOPAUSE_WRITE) {
-            if(visualizer_write_frames(vis,fds[2].fd) < 0) goto closefifo;
-        }
-
-        if(events && fds[2].revents & IOPAUSE_EXCEPT) {
-            closefifo:
-            fdnum = 2;
-            fd_close(fds[2].fd);
-            fds[2].fd = -1;
-            fds[2].revents = 0;
-            fds[2].events = 0;
-            vis->stream.output_frame_len = 0;
-        }
-
-        if(frame_counter >= framerate) {
-            tain_clockmon(vis->tain_cur,vis->tain_offset);
-            tain_sub(&diff,vis->tain_cur,vis->tain_last);
-            average_fps += desired_fps / (double)tain_to_millisecs(&diff);
-            average_fps /= 2;
-            frame_counter = 0;
-            if(average_fps < framerate - 1) {
-                fprintf(stderr,"WARNING: average fps too low, want %d, currently %f\n",framerate,average_fps);
-            }
-            tain_clockmon(vis->tain_last,vis->tain_offset);
-        }
-        lua_gc(vis->Lua,LUA_GCCOLLECT,0);
-    }
-
-    breakout:
-    visualizer_make_frames(vis);
-    if(fds[2].fd > -1) {
-        visualizer_write_frames(vis,fds[2].fd);
-    }
-
-    cleanup:
-    fd_close(fds[0].fd);
-    fd_close(fds[1].fd);
-    visualizer_free(vis);
-    if(own_fifo) unlink(output_path);
-
-    return 0;
 }

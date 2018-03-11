@@ -16,6 +16,7 @@ typedef struct visualizer {
     avi_stream stream;
     audio_processor processor;
     const char *lua_folder;
+    const char *input_fifo;
     const char *output_fifo;
     char *buffer;
     int buffer_len;
@@ -26,9 +27,6 @@ typedef struct visualizer {
     struct mpd_message *cur_msg;
     genalloc lua_funcs;
     lua_State *Lua;
-    tain_t *tain_offset;
-    tain_t *tain_cur;
-    tain_t *tain_last;
     thread_queue_t image_queue;
     image_q images[100];
     void (*lua_image_cb)(lua_State *L, intptr_t table_ref, unsigned int image_len, uint8_t *image);
@@ -47,9 +45,6 @@ typedef struct visualizer {
   .cur_msg = NULL, \
   .lua_funcs = GENALLOC_ZERO, \
   .Lua = NULL, \
-  .tain_offset = NULL, \
-  .tain_cur = NULL, \
-  .tain_last = NULL, \
   .lua_image_cb = NULL, \
 }
 
@@ -66,6 +61,7 @@ visualizer_init(visualizer *vis,
                 unsigned int channels,
                 unsigned int samplesize,
                 unsigned int bars,
+                const char *input_fifo,
                 const char *output_fifo,
                 const char *lua_folder);
 
@@ -76,7 +72,7 @@ int
 visualizer_make_frames(visualizer *vis);
 
 int
-visualizer_write_frames(visualizer *vis, int fd);
+visualizer_write_frame(visualizer *vis, int fd);
 
 int
 visualizer_free(visualizer *vis);
@@ -86,6 +82,9 @@ visualizer_load_scripts(visualizer *vis);
 
 void
 visualizer_set_image_cb(void (*lua_image_cb)(lua_State *L, intptr_t table_ref, unsigned int frames, uint8_t *image));
+
+int
+visualizer_loop(visualizer *vis);
 
 #ifdef __cplusplus
 extern "C" {

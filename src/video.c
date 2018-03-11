@@ -73,6 +73,7 @@ avi_stream_init(
         return 0;
     }
 
+    stream->framerate = framerate;
     stream->video_frame_len = sizeof(uint8_t) * width * height * 3;
     stream->audio_frame_len = sizeof(uint8_t) * (samplerate / framerate) * channels * samplesize;
     stream->frame_len = stream->video_frame_len + stream->audio_frame_len + 16;
