@@ -22,6 +22,7 @@ typedef struct visualizer {
     unsigned int channels;
     unsigned int samplesize;
     unsigned int bars;
+    unsigned int mpd;
     const char *lua_folder;
     const char *input_fifo;
     const char *output_fifo;
@@ -72,6 +73,7 @@ typedef struct visualizer {
   .channels = 0, \
   .samplesize = 0, \
   .bars = 0, \
+  .mpd = 1, \
 }
 
 #ifdef __cplusplus

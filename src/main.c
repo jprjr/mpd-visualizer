@@ -18,7 +18,8 @@
                "  -b number of visualizer bars to calculate\n" \
                "  -i /path/to/input\n" \
                "  -o /path/to/output\n" \
-               "  -l /path/to/lua/scripts\n"
+               "  -l /path/to/lua/scripts\n" \
+               "  -m (1|0) enable/disable mpd\n"
 
 #define dieusage() strerr_die1x(1, USAGE)
 #define diemem() strerr_die1x(1, "Unable to malloc memory")
@@ -34,7 +35,7 @@ int main(int argc, char const *const *argv) {
 
     subgetopt_t l = SUBGETOPT_ZERO;
 
-    while((opt = subgetopt_r(argc,argv,"w:h:f:r:c:s:b:i:o:l:",&l)) != -1 ) {
+    while((opt = subgetopt_r(argc,argv,"w:h:f:r:c:s:b:i:o:l:m:",&l)) != -1 ) {
         switch(opt) {
             case 'w': {
                 if(!uint_scan(l.arg,&(vis->video_width))) dieusage();
@@ -62,6 +63,11 @@ int main(int argc, char const *const *argv) {
             }
             case 's': {
                 if(!uint_scan(l.arg,&(vis->samplesize))) dieusage();
+                break;
+            }
+            case 'm': {
+                if(!uint_scan(l.arg,&(vis->mpd))) dieusage();
+                if(vis->mpd > 1) dieusage();
                 break;
             }
             case 'i': {

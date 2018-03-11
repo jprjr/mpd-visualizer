@@ -233,6 +233,13 @@ static void visualizer_free_metadata(visualizer *vis) {
 }
 
 static void visualizer_get_metadata(visualizer *vis) {
+    if(!vis->mpd) {
+        lua_getglobal(vis->Lua,"song");
+        lua_pushinteger(vis->Lua,vis->processor.totalsamples / vis->processor.samplerate);
+        lua_setfield(vis->Lua,-2,"elapsed");
+        return;
+    }
+
     if(!vis->mpd_conn) {
         return;
     }
@@ -355,6 +362,7 @@ visualizer_make_frames(visualizer *vis) {
     image_q *q = NULL;
 
     while(vis->processor.samples_available >= vis->processor.sample_window_len && vis->processor.samples_available > 0) {
+        vis->processor.totalsamples += vis->processor.sample_window_len;
         audio_processor_fftw(&(vis->processor));
         if(vis->processor.firstflag == 0) {
             vis->processor.firstflag = 1;
@@ -506,16 +514,18 @@ visualizer_init(visualizer *vis) {
 
     vis->bytes_to_read = (vis->samplerate / vis->framerate) * vis->channels * vis->samplesize * 4;
 
-    vis->mpd_conn = mpd_connection_new(0,0,0);
-    if(!vis->mpd_conn) {
-        visualizer_free(vis);
-        return 0;
+    if(vis->mpd) {
+        vis->mpd_conn = mpd_connection_new(0,0,0);
+        if(!vis->mpd_conn) {
+            visualizer_free(vis);
+            return 0;
+        }
+        if(mpd_connection_get_error(vis->mpd_conn) != MPD_ERROR_SUCCESS) {
+            mpd_connection_free(vis->mpd_conn);
+            vis->mpd_conn = 0;
+        }
+        mpd_run_subscribe(vis->mpd_conn,"visualizer");
     }
-    if(mpd_connection_get_error(vis->mpd_conn) != MPD_ERROR_SUCCESS) {
-        mpd_connection_free(vis->mpd_conn);
-        vis->mpd_conn = 0;
-    }
-    mpd_run_subscribe(vis->mpd_conn,"visualizer");
 
     vis->Lua = 0;
     vis->Lua = luaL_newstate();
