@@ -664,8 +664,10 @@ visualizer_loop(visualizer *vis) {
             vis->fds[2].events = IOPAUSE_EXCEPT;
             ndelay_off(vis->fds[2].fd);
             avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
+            while(cbuffer_len(&(vis->stream.frames)) >= vis->stream.frame_len) {
+                visualizer_write_frame(vis,vis->fds[2].fd);
+            }
         }
-
     }
 
     events = iopause_stamp(vis->fds,fdnum,0,0);
