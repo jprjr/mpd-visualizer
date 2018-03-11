@@ -324,9 +324,6 @@ static void visualizer_get_metadata(visualizer *vis) {
 
 int visualizer_write_frame(visualizer *vis, int fd) {
     int bytes = 0;
-    if(fd == -1) {
-        return 0;
-    }
 
     if(vis->stream.output_frame_len == 0) {
         cbuffer_get(&(vis->stream.frames),vis->stream.output_frame,vis->stream.frame_len);
@@ -548,10 +545,21 @@ visualizer_loop(visualizer *vis) {
     int signal = 0;
     int frame = 0;
 
+    tain_t _deadline = TAIN_ZERO;
+    tain_t _now = TAIN_ZERO;
+    tain_t _offset = TAIN_ZERO;
+    tain_t _last = TAIN_ZERO;
+
+    tain_t *deadline = NULL;
+    tain_t *now = NULL;
+    tain_t *offset = &_offset;
+    tain_t *last = &_last;
+
+    tain_clockmon_init(offset);
+
     pthread_t this_thread = pthread_self();
 
-    uint32_t nanosecs_per_frame = 1000000000;
-    nanosecs_per_frame /=  vis->stream.framerate;
+    uint32_t nanosecs_per_frame = 1000000000 / vis->stream.framerate;
 
     iopause_fd fds[3];
 
@@ -624,7 +632,10 @@ visualizer_loop(visualizer *vis) {
 
         }
 
-        events = iopause_stamp(fds,fdnum,0,0);
+        if(now != NULL) {
+            tain_clockmon(now,offset);
+        }
+        events = iopause_stamp(fds,fdnum,deadline,now);
 
         if(events && fds[0].revents & IOPAUSE_READ) {
             signal = selfpipe_read();
@@ -642,14 +653,26 @@ visualizer_loop(visualizer *vis) {
 
         if(events && fds[1].revents & IOPAUSE_READ) {
             if(visualizer_grab_audio(vis,fds[1].fd) <= 0) goto breakout;
+            visualizer_make_frames(vis);
         }
 
-        visualizer_make_frames(vis);
-
         if(cbuffer_len(&(vis->stream.frames)) >= vis->stream.frame_len) {
+            if(deadline == NULL) { /* first frame */
+                deadline = &_deadline;
+                now = &_now;
+                tain_clockmon(deadline,offset);
+            }
+        }
+        else {
+            deadline = NULL;
+            now = NULL;
+        }
+
+        if(events == 0 && fds[2].fd != -1) {
             frame = visualizer_write_frame(vis,fds[2].fd);
-            if(frame == -1) {
-                goto closefifo;
+            switch(frame) {
+                case -1: goto closefifo; break;
+                case 1: deadline = &_deadline; now = &_now; tain_clockmon(deadline,offset); deadline->nano += nanosecs_per_frame; break;
             }
         }
 
