@@ -42,6 +42,11 @@ typedef struct visualizer {
     int own_fifo;
     uint32_t nanosecs_per_frame;
     int reload;
+    const char *title;
+    const char *artist;
+    const char *album;
+    const char *filename;
+    int totaltime;
 } visualizer;
 
 #define VISUALIZER_ZERO { \
@@ -55,6 +60,10 @@ typedef struct visualizer {
   .mpd_stat = NULL, \
   .cur_song = NULL, \
   .cur_msg = NULL, \
+  .title = NULL, \
+  .artist = NULL, \
+  .album = NULL, \
+  .filename = NULL, \
   .lua_funcs = GENALLOC_ZERO, \
   .Lua = NULL, \
   .lua_image_cb = NULL, \
@@ -74,6 +83,7 @@ typedef struct visualizer {
   .samplesize = 0, \
   .bars = 0, \
   .mpd = 1, \
+  .totaltime = -1, \
 }
 
 #ifdef __cplusplus

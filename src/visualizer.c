@@ -551,6 +551,29 @@ visualizer_init(visualizer *vis) {
     lua_settop(vis->Lua,0);
 
     lua_newtable(vis->Lua);
+    if(!vis->mpd) {
+        if(vis->title) {
+            lua_pushlstring(vis->Lua,vis->title,strlen(vis->title));
+            lua_setfield(vis->Lua,-2,"title");
+        }
+        if(vis->album) {
+            lua_pushlstring(vis->Lua,vis->album,strlen(vis->album));
+            lua_setfield(vis->Lua,-2,"album");
+        }
+        if(vis->artist) {
+            lua_pushlstring(vis->Lua,vis->artist,strlen(vis->artist));
+            lua_setfield(vis->Lua,-2,"artist");
+        }
+        if(vis->filename) {
+            lua_pushlstring(vis->Lua,vis->filename,strlen(vis->filename));
+            lua_setfield(vis->Lua,-2,"file");
+        }
+        if(vis->totaltime > -1) {
+            lua_pushinteger(vis->Lua,vis->totaltime);
+            lua_setfield(vis->Lua,-2,"total");
+        }
+
+    }
     lua_setglobal(vis->Lua,"song");
     lua_settop(vis->Lua,0);
 

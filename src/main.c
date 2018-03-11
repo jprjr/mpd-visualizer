@@ -19,7 +19,13 @@
                "  -i /path/to/input\n" \
                "  -o /path/to/output\n" \
                "  -l /path/to/lua/scripts\n" \
-               "  -m (1|0) enable/disable mpd\n"
+               "  -m (1|0) enable/disable mpd\n" \
+               "Following options only valid when -m=0\n" \
+               "  -t title\n" \
+               "  -a artist\n" \
+               "  -A album\n" \
+               "  -F filename\n" \
+               "  -T totaltime (in seconds)\n"
 
 #define dieusage() strerr_die1x(1, USAGE)
 #define diemem() strerr_die1x(1, "Unable to malloc memory")
@@ -30,12 +36,12 @@ int main(int argc, char const *const *argv) {
     visualizer *vis = &_vis;
 
     int loopres = 0;
-
     char opt = 0;
+    unsigned int totaltime = 0;
 
     subgetopt_t l = SUBGETOPT_ZERO;
 
-    while((opt = subgetopt_r(argc,argv,"w:h:f:r:c:s:b:i:o:l:m:",&l)) != -1 ) {
+    while((opt = subgetopt_r(argc,argv,"w:h:f:r:c:s:b:i:o:l:m:t:a:A:F:T:",&l)) != -1 ) {
         switch(opt) {
             case 'w': {
                 if(!uint_scan(l.arg,&(vis->video_width))) dieusage();
@@ -80,6 +86,27 @@ int main(int argc, char const *const *argv) {
             }
             case 'l': {
                 vis->lua_folder = l.arg;
+                break;
+            }
+            case 't': {
+                vis->title = l.arg;
+                break;
+            }
+            case 'a': {
+                vis->artist = l.arg;
+                break;
+            }
+            case 'A': {
+                vis->album = l.arg;
+                break;
+            }
+            case 'F': {
+                vis->filename = l.arg;
+                break;
+            }
+            case 'T': {
+                if(!uint_scan(l.arg,&totaltime)) dieusage();
+                vis->totaltime = totaltime;
                 break;
             }
             default: dieusage();
