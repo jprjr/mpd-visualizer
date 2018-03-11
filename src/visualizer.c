@@ -512,7 +512,7 @@ visualizer_init(visualizer *vis) {
         return 0;
     }
 
-    vis->bytes_to_read = (vis->samplerate / vis->framerate) * vis->channels * vis->samplesize * 4;
+    vis->bytes_to_read = (vis->samplerate / vis->framerate) * vis->channels * vis->samplesize;
 
     if(vis->mpd) {
         vis->mpd_conn = mpd_connection_new(0,0,0);
