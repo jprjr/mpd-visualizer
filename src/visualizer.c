@@ -333,28 +333,6 @@ static void visualizer_get_metadata(visualizer *vis) {
     mpd_response_finish(vis->mpd_conn);
 }
 
-static int
-visualizer_write_frame(visualizer *vis, int fd) {
-    int bytes = 0;
-    if(fd == -1) {
-        return 0;
-    }
-
-    if(vis->stream.output_frame_len == 0) {
-        ringbuf_memcpy_from(vis->stream.output_frame,vis->stream.frames,vis->stream.frame_len);
-        vis->stream.output_frame_len = vis->stream.frame_len;
-    }
-
-    do {
-        bytes = fd_write(fd,vis->stream.output_frame + (vis->stream.frame_len - vis->stream.output_frame_len),vis->stream.output_frame_len);
-        if(bytes < 0) {
-            return -1;
-        }
-        vis->stream.output_frame_len -= (unsigned int)bytes;
-    } while(vis->stream.output_frame_len > 0);
-
-    return 1;
-}
 
 static int
 visualizer_make_frames(visualizer *vis) {
@@ -435,7 +413,7 @@ visualizer_reload(visualizer *vis) {
         strerr_die1sys(1,"Unable to trap SIGUSR1: ");
     }
     if(selfpipe_trap(SIGUSR2) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGUSR1: ");
+        strerr_die1sys(1,"Unable to trap SIGUSR2: ");
     }
     global_vis = vis;
     luaimage_setup_threads(&(vis->image_queue));
@@ -471,6 +449,9 @@ visualizer_init(visualizer *vis) {
         !vis->output_fifo ) return 0;
 
     global_vis = vis;
+
+    tain_clockmon_init(&(vis->offset));
+    vis->nanosec_per_frame = 1000000000 / vis->framerate;
 
     pthread_t this_thread = pthread_self();
     struct sched_param sparams;
@@ -514,6 +495,30 @@ visualizer_init(visualizer *vis) {
         visualizer_free(vis);
         return 0;
     }
+
+    vis->fds[0].fd = selfpipe_init();
+    vis->fds[0].events = IOPAUSE_READ | IOPAUSE_EXCEPT;
+
+    if(vis->fds[0].fd < 0) {
+        strerr_die1sys(1,"Unable to create selfpipe");
+    }
+    if(selfpipe_trap(SIGINT) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGINT: ");
+    }
+    if(selfpipe_trap(SIGTERM) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGTERM: ");
+    }
+    if(selfpipe_trap(SIGPIPE) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGPIPE: ");
+    }
+    if(selfpipe_trap(SIGUSR1) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGUSR1: ");
+    }
+    if(selfpipe_trap(SIGUSR2) < 0) {
+        strerr_die1sys(1,"Unable to trap SIGUSR2: ");
+    }
+
+
 
     if(vis->mpd) {
         vis->mpd_conn = mpd_connection_new(0,0,0);
@@ -621,29 +626,6 @@ visualizer_init(visualizer *vis) {
 
     luaimage_setup_threads(&(vis->image_queue));
 
-    vis->fds[0].fd = selfpipe_init();
-    vis->fds[0].events = IOPAUSE_READ;
-
-    if(vis->fds[0].fd < 0) {
-        strerr_die1sys(1,"Unable to create selfpipe");
-    }
-
-    if(selfpipe_trap(SIGINT) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGINT: ");
-    }
-    if(selfpipe_trap(SIGTERM) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGTERM: ");
-    }
-    if(selfpipe_trap(SIGPIPE) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGPIPE: ");
-    }
-    if(selfpipe_trap(SIGUSR1) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGUSR1: ");
-    }
-    if(selfpipe_trap(SIGUSR2) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGUSR1: ");
-    }
-
     if(strcmp(vis->output_fifo,"-") != 0) {
         vis->own_fifo = mkfifo(vis->output_fifo,
           S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
@@ -667,6 +649,7 @@ visualizer_init(visualizer *vis) {
         vis->own_fifo = 0;
         vis->fds[2].fd = fileno(stdout);
         avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
+        ndelay_on(vis->fds[2].fd);
     }
 
     if(vis->own_fifo < 0) {
@@ -704,24 +687,16 @@ int
 visualizer_loop(visualizer *vis) {
     int events = 0;
     int signal = 0;
-    int frame = 0;
-    int fdnum = 2;
-
-    if(vis->fds[2].fd != -1) {
-        fdnum = 3;
-    }
 
     if(vis->fds[2].fd == -1) {
         vis->fds[2].fd = open_write(vis->output_fifo);
         if(vis->fds[2].fd > -1) {
-            fdnum = 3;
+            fprintf(stderr,"Opened fifo\n");
             vis->fds[2].revents = 0;
             vis->fds[2].events = IOPAUSE_EXCEPT;
             ndelay_off(vis->fds[2].fd);
             avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
-            while(ringbuf_bytes_used(vis->stream.frames) >= vis->stream.frame_len) {
-                visualizer_write_frame(vis,vis->fds[2].fd);
-            }
+            ndelay_on(vis->fds[2].fd);
         }
     }
 
@@ -748,22 +723,34 @@ visualizer_loop(visualizer *vis) {
     if(events && vis->fds[1].revents & IOPAUSE_READ) {
         if(visualizer_grab_audio(vis,vis->fds[1].fd) <= 0) return -1;
         visualizer_make_frames(vis);
-        while(ringbuf_bytes_used(vis->stream.frames) >= vis->stream.frame_len && (vis->fds[2].fd != -1) ) {
-            frame = visualizer_write_frame(vis,vis->fds[2].fd);
-            if(frame == -1) {
+        if(vis->fds[2].fd == -1) {
+            ringbuf_reset(vis->stream.frames);
+        }
+        else {
+            vis->fds[2].events = IOPAUSE_WRITE | IOPAUSE_EXCEPT;
+        }
+    }
+
+    if(events && vis->fds[2].revents & IOPAUSE_WRITE) {
+        if( ringbuf_bytes_used(vis->stream.frames) >= 8192) {
+            if(ringbuf_write(vis->fds[2].fd,vis->stream.frames,8192) == 0) {
                 goto closefifo;
             }
         }
+        else {
+            vis->fds[2].events = IOPAUSE_EXCEPT;
+        }
+
     }
 
 
     if(events && vis->fds[2].revents & IOPAUSE_EXCEPT) {
         closefifo:
+        fprintf(stderr,"Closing fifo\n");
         fd_close(vis->fds[2].fd);
         vis->fds[2].revents = 0;
         vis->fds[2].events = 0;
-        vis->stream.output_frame_len = 0;
-        frame = 0;
+        vis->stream.output_frame_rem = 0;
         if(vis->fds[2].fd == fileno(stdout)) {
             return -1;
         }
@@ -777,18 +764,28 @@ visualizer_loop(visualizer *vis) {
         mpd_send_idle_mask(vis->mpd_conn, MPD_IDLE_PLAYER | MPD_IDLE_MESSAGE);
     }
 
-    return frame;
+    return 0;
 }
 
 int visualizer_cleanup(visualizer *vis) {
 
-    if(visualizer_make_frames(vis) && vis->fds[2].fd != -1) {
-        while(visualizer_write_frame(vis,vis->fds[2].fd) > 0) {};
-        fd_close(vis->fds[2].fd);
+    visualizer_make_frames(vis);
+
+    int n = 0;
+
+    while( ringbuf_bytes_used(vis->stream.frames) > 0 && vis->fds[2].fd != -1 ) {
+        n = ringbuf_write(vis->fds[2].fd,vis->stream.frames,8192);
+        if (n < 0) {
+            fd_close(vis->fds[2].fd);
+            vis->fds[2].fd = -1;
+        }
     }
 
     fd_close(vis->fds[0].fd);
     fd_close(vis->fds[1].fd);
+    if(vis->fds[3].fd != -1) {
+        fd_close(vis->fds[3].fd);
+    }
     visualizer_free(vis);
     if(vis->own_fifo) unlink(vis->output_fifo);
 

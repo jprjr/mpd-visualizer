@@ -18,7 +18,7 @@ typedef struct avi_stream {
     unsigned int video_frame_len;
     unsigned int audio_frame_len;
     unsigned int frame_len;
-    unsigned int output_frame_len;
+    unsigned int output_frame_rem;
 
     uint8_t *video_frame;
     uint8_t *audio_frame;
@@ -40,7 +40,6 @@ typedef struct avi_stream {
   .video_frame_len = 0, \
   .audio_frame_len = 0, \
   .frame_len = 0, \
-  .output_frame_len = 0, \
   .video_frame = NULL, \
   .audio_frame = NULL, \
   .output_frame = NULL, \
@@ -48,6 +47,7 @@ typedef struct avi_stream {
   .audio_frame_header = NULL, \
   .input_frame = NULL, \
   .frames = NULL, \
+  .output_frame_rem = 0, \
 }
 
 #ifdef __cplusplus

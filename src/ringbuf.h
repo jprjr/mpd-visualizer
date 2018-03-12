@@ -27,7 +27,21 @@
  */
 
 #include <stddef.h>
+
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
+#include <unistd.h>
+#include <sys/param.h>
+
+
+struct ringbuf_t
+{
+    uint8_t *buf;
+    uint8_t *head, *tail;
+    size_t size;
+};
 
 typedef struct ringbuf_t *ringbuf_t;
 
@@ -50,8 +64,8 @@ ringbuf_new(size_t capacity);
  * For the usable capacity of the ring buffer, use the
  * ringbuf_capacity function.
  */
-size_t
-ringbuf_buffer_size(const struct ringbuf_t *rb);
+#define ringbuf_buffer_size(rb) \
+  ((rb)->size)
 
 /*
  * Deallocate a ring buffer, and, as a side effect, set the pointer to
@@ -63,45 +77,47 @@ ringbuf_free(ringbuf_t *rb);
 /*
  * Reset a ring buffer to its initial state (empty).
  */
-void
-ringbuf_reset(ringbuf_t rb);
+#define ringbuf_reset(rb) \
+    (rb->head = rb->tail = rb->buf)
 
 /*
  * The usable capacity of the ring buffer, in bytes. Note that this
  * value may be less than the ring buffer's internal buffer size, as
  * returned by ringbuf_buffer_size.
  */
-size_t
-ringbuf_capacity(const struct ringbuf_t *rb);
+#define ringbuf_capacity(rb) \
+  ((unsigned)((rb->size) - 1))
 
 /*
  * The number of free/available bytes in the ring buffer. This value
  * is never larger than the ring buffer's usable capacity.
  */
-size_t
-ringbuf_bytes_free(const struct ringbuf_t *rb);
+#define ringbuf_bytes_free(rb) \
+    (rb->head >= rb->tail ? (unsigned)(ringbuf_capacity(rb) - (rb->head - rb->tail)) : (unsigned)(rb->tail - rb->head - 1))
 
 /*
  * The number of bytes currently being used in the ring buffer. This
  * value is never larger than the ring buffer's usable capacity.
  */
-size_t
-ringbuf_bytes_used(const struct ringbuf_t *rb);
+#define ringbuf_bytes_used(rb) \
+    ((unsigned)(ringbuf_capacity(rb) - ringbuf_bytes_free(rb)))
 
-int
-ringbuf_is_full(const struct ringbuf_t *rb);
+#define ringbuf_is_full(rb) \
+    (ringbuf_bytes_free(rb) == 0)
 
-int
-ringbuf_is_empty(const struct ringbuf_t *rb);
+#define ringbuf_is_empty(rb) \
+    (ringbuf_bytes_free(rb) == ringbuf_capacity(rb))
 
 /*
  * Const access to the head and tail pointers of the ring buffer.
  */
-const void *
-ringbuf_tail(const struct ringbuf_t *rb);
+#define ringbuf_tail(rb) (rb->tail)
+#define ringbuf_head(rb) (rb->head)
+#define ringbuf_end(rb) \
+    (rb->buf + ringbuf_buffer_size(rb))
 
-const void *
-ringbuf_head(const struct ringbuf_t *rb);
+#define ringbuf_nextp(rb,p) \
+    (rb->buf + ((++p - rb->buf) % ringbuf_buffer_size(rb)))
 
 /*
  * Locate the first occurrence of character c (converted to an

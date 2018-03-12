@@ -30,7 +30,6 @@
 #define dieusage() strerr_die1x(1, USAGE)
 #define diemem() strerr_die1x(1, "Unable to malloc memory")
 
-
 int main(int argc, char const *const *argv) {
     visualizer _vis = VISUALIZER_ZERO;
     visualizer *vis = &_vis;
@@ -114,11 +113,11 @@ int main(int argc, char const *const *argv) {
     }
 
     if(!visualizer_init(vis)) dieusage();
-
-    while((loopres = visualizer_loop(vis)) != -1) {
+    while( (loopres = visualizer_loop(vis)) != -1) {
+        // todo - hot C reload
     }
-
     visualizer_cleanup(vis);
+
 
     return 0;
 

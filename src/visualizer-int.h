@@ -17,9 +17,6 @@ static int
 visualizer_make_frames(visualizer *vis);
 
 static int
-visualizer_write_frame(visualizer *vis, int fd);
-
-static int
 visualizer_free(visualizer *vis);
 
 static void
