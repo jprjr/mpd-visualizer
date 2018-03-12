@@ -235,7 +235,7 @@ static void visualizer_free_metadata(visualizer *vis) {
 static void visualizer_get_metadata(visualizer *vis) {
     if(!vis->mpd) {
         lua_getglobal(vis->Lua,"song");
-        lua_pushinteger(vis->Lua,vis->processor.totalsamples / vis->processor.samplerate);
+        lua_pushinteger(vis->Lua,vis->elapsed_ms / 1000);
         lua_setfield(vis->Lua,-2,"elapsed");
         return;
     }
@@ -261,11 +261,13 @@ static void visualizer_get_metadata(visualizer *vis) {
     }
     mpd_response_finish(vis->mpd_conn);
 
+    vis->elapsed_ms = mpd_status_get_elapsed_ms(vis->mpd_stat);
+
     lua_getglobal(vis->Lua,"song");
     lua_pushinteger(vis->Lua,mpd_status_get_song_id(vis->mpd_stat));
     lua_setfield(vis->Lua,-2,"id");
 
-    lua_pushinteger(vis->Lua,mpd_status_get_elapsed_time(vis->mpd_stat));
+    lua_pushinteger(vis->Lua,vis->elapsed_ms / 1000);
     lua_setfield(vis->Lua,-2,"elapsed");
 
     lua_pushinteger(vis->Lua,mpd_status_get_total_time(vis->mpd_stat));
@@ -362,7 +364,7 @@ visualizer_make_frames(visualizer *vis) {
     image_q *q = NULL;
 
     while(vis->processor.samples_available >= vis->processor.sample_window_len && vis->processor.samples_available > 0) {
-        vis->processor.totalsamples += vis->processor.sample_window_len;
+        vis->elapsed_ms += vis->ms_per_frame;
         audio_processor_fftw(&(vis->processor));
         if(vis->processor.firstflag == 0) {
             vis->processor.firstflag = 1;
@@ -372,7 +374,6 @@ visualizer_make_frames(visualizer *vis) {
                vis->processor.output_buffer,
                vis->stream.audio_frame_len);
 
-        visualizer_get_metadata(vis);
         memset(vis->stream.video_frame,0,vis->stream.video_frame_len);
 
         while(thread_queue_count(&(vis->image_queue)) > 0) {
@@ -386,6 +387,10 @@ visualizer_make_frames(visualizer *vis) {
                 q = NULL;
             }
         }
+
+        lua_getglobal(vis->Lua,"song");
+        lua_pushinteger(vis->Lua,vis->elapsed_ms / 1000);
+        lua_setfield(vis->Lua,-2,"elapsed");
 
         for(i=0;i<func_list_len(&(vis->lua_funcs));i++) {
             if(func_list_s(&(vis->lua_funcs))[i].frame_ref != -1) {
@@ -525,6 +530,8 @@ visualizer_init(visualizer *vis) {
             vis->mpd_conn = 0;
         }
         mpd_run_subscribe(vis->mpd_conn,"visualizer");
+        vis->fds[3].fd = mpd_connection_get_fd(vis->mpd_conn);
+        vis->fds[3].events = IOPAUSE_READ | IOPAUSE_EXCEPT;
     }
 
     vis->Lua = 0;
@@ -683,7 +690,15 @@ visualizer_init(visualizer *vis) {
     }
     vis->fds[1].events = IOPAUSE_READ;
 
-    vis->nanosecs_per_frame /=  vis->stream.framerate;
+    vis->ms_per_frame = (vis->processor.sample_window_len) / (vis->samplerate / 1000);
+
+    if(vis->mpd_conn) {
+        visualizer_get_metadata(vis);
+
+        if(!mpd_send_idle_mask(vis->mpd_conn, MPD_IDLE_PLAYER | MPD_IDLE_MESSAGE)) {
+            strerr_die2x(1,"Error idling: ",mpd_connection_get_error_message(vis->mpd_conn));
+        }
+    }
 
     return 1;
 
@@ -714,7 +729,7 @@ visualizer_loop(visualizer *vis) {
         }
     }
 
-    events = iopause_stamp(vis->fds,fdnum,0,0);
+    events = iopause_stamp(vis->fds,4,0,0);
 
     if(events && vis->fds[0].revents & IOPAUSE_READ) {
         signal = selfpipe_read();
@@ -749,7 +764,6 @@ visualizer_loop(visualizer *vis) {
 
     if(events && vis->fds[2].revents & IOPAUSE_EXCEPT) {
         closefifo:
-        fdnum = 2;
         fd_close(vis->fds[2].fd);
         vis->fds[2].revents = 0;
         vis->fds[2].events = 0;
@@ -761,6 +775,12 @@ visualizer_loop(visualizer *vis) {
         vis->fds[2].fd = -1;
     }
 
+    if(events && vis->fds[3].revents & IOPAUSE_READ) {
+        mpd_recv_idle(vis->mpd_conn,0);
+        mpd_response_finish(vis->mpd_conn);
+        visualizer_get_metadata(vis);
+        mpd_send_idle_mask(vis->mpd_conn, MPD_IDLE_PLAYER | MPD_IDLE_MESSAGE);
+    }
 
     return frame;
 }

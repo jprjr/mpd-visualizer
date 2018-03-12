@@ -23,6 +23,8 @@ typedef struct visualizer {
     unsigned int samplesize;
     unsigned int bars;
     unsigned int mpd;
+    unsigned int ms_per_frame;
+    uint64_t elapsed_ms;
     const char *lua_folder;
     const char *input_fifo;
     const char *output_fifo;
@@ -38,9 +40,8 @@ typedef struct visualizer {
     thread_queue_t image_queue;
     image_q images[100];
     void (*lua_image_cb)(lua_State *L, intptr_t table_ref, unsigned int image_len, uint8_t *image);
-    iopause_fd fds[3];
+    iopause_fd fds[4];
     int own_fifo;
-    uint32_t nanosecs_per_frame;
     int reload;
     const char *title;
     const char *artist;
@@ -71,9 +72,10 @@ typedef struct visualizer {
     { .fd = -1, .events = 0, .revents = 0 }, \
     { .fd = -1, .events = 0, .revents = 0 }, \
     { .fd = -1, .events = 0, .revents = 0 }, \
+    { .fd = -1, .events = 0, .revents = 0 }, \
   }, \
   .own_fifo = -1, \
-  .nanosecs_per_frame = 1000000000 , \
+  .ms_per_frame = 0 , \
   .reload = 0, \
   .video_width = 0, \
   .video_height = 0, \
@@ -84,6 +86,7 @@ typedef struct visualizer {
   .bars = 0, \
   .mpd = 1, \
   .totaltime = -1, \
+  .elapsed_ms = 0, \
 }
 
 #ifdef __cplusplus
