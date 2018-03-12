@@ -340,7 +340,7 @@ visualizer_make_frames(visualizer *vis) {
     unsigned long i = 0;
     image_q *q = NULL;
 
-    while(vis->processor.samples_available >= vis->processor.sample_window_len && vis->processor.samples_available > 0) {
+    while(vis->processor.samples_available >= vis->processor.sample_window_len) {
         vis->elapsed_ms += vis->ms_per_frame;
         audio_processor_fftw(&(vis->processor));
         if(vis->processor.firstflag == 0) {
@@ -388,6 +388,9 @@ visualizer_make_frames(visualizer *vis) {
 
         wake_queue();
 
+        if(ringbuf_bytes_free(vis->stream.frames) < vis->stream.frame_len) {
+            fprintf(stderr,"Warning: overwriting old video frame\n");
+        }
         ringbuf_memcpy_into(vis->stream.frames,vis->stream.input_frame,vis->stream.frame_len);
 
         vis->processor.samples_available -= vis->processor.sample_window_len;
@@ -449,9 +452,6 @@ visualizer_init(visualizer *vis) {
         !vis->output_fifo ) return 0;
 
     global_vis = vis;
-
-    tain_clockmon_init(&(vis->offset));
-    vis->nanosec_per_frame = 1000000000 / vis->framerate;
 
     pthread_t this_thread = pthread_self();
     struct sched_param sparams;
@@ -734,9 +734,15 @@ visualizer_loop(visualizer *vis) {
 
     if(events && vis->fds[2].revents & IOPAUSE_WRITE) {
         if( ringbuf_bytes_used(vis->stream.frames) >= 8192) {
-            if(ringbuf_write(vis->fds[2].fd,vis->stream.frames,8192) == 0) {
-                goto closefifo;
-            }
+            int rem = 8192;
+            int b = 0;
+            do {
+                b = ringbuf_write(vis->fds[2].fd,vis->stream.frames,rem);
+                if( b == -1 ) {
+                    goto closefifo;
+                }
+                rem -= b;
+            } while(rem > 0);
         }
         else {
             vis->fds[2].events = IOPAUSE_EXCEPT;
@@ -772,14 +778,19 @@ int visualizer_cleanup(visualizer *vis) {
 
     visualizer_make_frames(vis);
 
+    int rem = ringbuf_bytes_used(vis->stream.frames);
     int n = 0;
 
-    while( ringbuf_bytes_used(vis->stream.frames) > 0 && vis->fds[2].fd != -1 ) {
-        n = ringbuf_write(vis->fds[2].fd,vis->stream.frames,8192);
-        if (n < 0) {
-            fd_close(vis->fds[2].fd);
-            vis->fds[2].fd = -1;
+    if(vis->fds[2].fd != -1) {
+        while(rem > 0) {
+            n = ringbuf_write(vis->fds[2].fd,vis->stream.frames,rem);
+            if(n<0) {
+                rem = 0;
+                n = 0;
+            }
+            rem -= n;
         }
+        fd_close(vis->fds[2].fd);
     }
 
     fd_close(vis->fds[0].fd);

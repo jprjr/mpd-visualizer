@@ -47,10 +47,6 @@ typedef struct visualizer {
     const char *album;
     const char *filename;
     int totaltime;
-    tain_t offset;
-    tain_t now;
-    tain_t deadline;
-    uint32_t nanosec_per_frame;
 } visualizer;
 
 #define VISUALIZER_ZERO { \
@@ -89,10 +85,6 @@ typedef struct visualizer {
   .mpd = 1, \
   .totaltime = -1, \
   .elapsed_ms = 0, \
-  .offset = TAIN_ZERO, \
-  .now = TAIN_ZERO, \
-  .deadline = TAIN_ZERO, \
-  .nanosec_per_frame = 0, \
 }
 
 #ifdef __cplusplus
