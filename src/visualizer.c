@@ -203,8 +203,6 @@ visualizer_grab_audio(visualizer *vis, int fd) {
         strerr_warn1sys("Problem grabbing audio data: ");
         return bytes_read;
     }
-    fprintf(stderr,"Grabed %d bytes\n",bytes_read);
-
     ringbuf_memcpy_into(
         vis->processor.samples,
         vis->buffer,
@@ -417,7 +415,6 @@ visualizer_make_frames(visualizer *vis) {
         vis->processor.samples_available -= vis->processor.sample_window_len;
         frames++;
     }
-    fprintf(stderr,"Made %d frames\n",frames);
 
     return frames;
 }
