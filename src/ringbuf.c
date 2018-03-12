@@ -14,6 +14,7 @@
  */
 
 #include "ringbuf.h"
+#include <skalibs/allreadwrite.h>
 
 /*
  * The code is written for clarity, not cleverness or performance, and
@@ -134,7 +135,7 @@ ringbuf_read(int fd, ringbuf_t rb, size_t count)
 
     /* don't write beyond the end of the buffer */
     count = MIN(bufend - rb->head, count);
-    ssize_t n = read(fd, rb->head, count);
+    ssize_t n = fd_read(fd, (char *)rb->head, count);
     if (n > 0) {
         rb->head += n;
 
@@ -184,7 +185,7 @@ ringbuf_write(int fd, ringbuf_t rb, size_t count)
 
     const uint8_t *bufend = ringbuf_end(rb);
     count = MIN(bufend - rb->tail, count);
-    ssize_t n = write(fd, rb->tail, count);
+    ssize_t n = fd_write(fd, (char *)rb->tail, count);
     if (n > 0) {
         rb->tail += n;
 
