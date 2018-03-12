@@ -197,17 +197,18 @@ static int
 visualizer_grab_audio(visualizer *vis, int fd) {
     int bytes_read = 0;
     int samples_read = 0;
-    bytes_read = fd_read(fd,vis->buffer,vis->bytes_to_read);
+
+    bytes_read = fd_read(fd,vis->buffer,8192);
     if(bytes_read <= 0) {
         strerr_warn1sys("Problem grabbing audio data: ");
         return bytes_read;
     }
+    fprintf(stderr,"Grabed %d bytes\n",bytes_read);
 
-    if(cbuffer_isfull(&(vis->processor.samples))) {
-        cbuffer_rseek(&(vis->processor.samples),bytes_read);
-    }
-
-    cbuffer_put(&(vis->processor.samples),vis->buffer,bytes_read);
+    ringbuf_memcpy_into(
+        vis->processor.samples,
+        vis->buffer,
+        bytes_read);
 
     samples_read = bytes_read / (vis->processor.channels * vis->processor.samplesize);
 
@@ -342,7 +343,7 @@ visualizer_write_frame(visualizer *vis, int fd) {
     }
 
     if(vis->stream.output_frame_len == 0) {
-        cbuffer_get(&(vis->stream.frames),vis->stream.output_frame,vis->stream.frame_len);
+        ringbuf_memcpy_from(vis->stream.output_frame,vis->stream.frames,vis->stream.frame_len);
         vis->stream.output_frame_len = vis->stream.frame_len;
     }
 
@@ -407,16 +408,16 @@ visualizer_make_frames(visualizer *vis) {
 
         visualizer_free_metadata(vis);
 
+        lua_gc(vis->Lua,LUA_GCCOLLECT,0);
+
         wake_queue();
 
-        if(cbuffer_isfull(&(vis->stream.frames))) {
-            cbuffer_rseek(&(vis->stream.frames),vis->stream.frame_len);
-        }
-        cbuffer_put(&(vis->stream.frames),vis->stream.input_frame,vis->stream.frame_len);
+        ringbuf_memcpy_into(vis->stream.frames,vis->stream.input_frame,vis->stream.frame_len);
 
         vis->processor.samples_available -= vis->processor.sample_window_len;
         frames++;
     }
+    fprintf(stderr,"Made %d frames\n",frames);
 
     return frames;
 }
@@ -516,8 +517,6 @@ visualizer_init(visualizer *vis) {
         visualizer_free(vis);
         return 0;
     }
-
-    vis->bytes_to_read = (vis->samplerate / vis->framerate) * vis->channels * vis->samplesize;
 
     if(vis->mpd) {
         vis->mpd_conn = mpd_connection_new(0,0,0);
@@ -723,7 +722,7 @@ visualizer_loop(visualizer *vis) {
             vis->fds[2].events = IOPAUSE_EXCEPT;
             ndelay_off(vis->fds[2].fd);
             avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
-            while(cbuffer_len(&(vis->stream.frames)) >= vis->stream.frame_len) {
+            while(ringbuf_bytes_used(vis->stream.frames) >= vis->stream.frame_len) {
                 visualizer_write_frame(vis,vis->fds[2].fd);
             }
         }
@@ -752,8 +751,7 @@ visualizer_loop(visualizer *vis) {
     if(events && vis->fds[1].revents & IOPAUSE_READ) {
         if(visualizer_grab_audio(vis,vis->fds[1].fd) <= 0) return -1;
         visualizer_make_frames(vis);
-        lua_gc(vis->Lua,LUA_GCCOLLECT,0);
-        if(cbuffer_len(&(vis->stream.frames)) >= vis->stream.frame_len && vis->fds[2].fd != -1) {
+        while(ringbuf_bytes_used(vis->stream.frames) >= vis->stream.frame_len && (vis->fds[2].fd != -1) ) {
             frame = visualizer_write_frame(vis,vis->fds[2].fd);
             if(frame == -1) {
                 goto closefifo;

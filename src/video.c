@@ -34,8 +34,8 @@ avi_stream_free(avi_stream *stream) {
         free(stream->output_frame);
     }
 
-    if(stream->frame_data) {
-        free(stream->frame_data);
+    if(stream->frames) {
+        ringbuf_free(&(stream->frames));
     }
 
     return 0;
@@ -91,10 +91,10 @@ avi_stream_init(
     stream->audio_frame = stream->audio_frame_header + 8;
     memset(stream->input_frame,0,stream->frame_len);
 
-    stream->frame_data = (char *)malloc(1 + ( framerate * stream->frame_len));
-    if(!stream->frame_data) return avi_stream_free(stream);
-
-    cbuffer_init(&(stream->frames), stream->frame_data, 1 + (framerate * stream->frame_len));
+    stream->frames = ringbuf_new(framerate * stream->frame_len);
+    if(!stream->frames) {
+        return avi_stream_free(stream);
+    }
 
     memcpy(stream->avi_header,avi_header,326);
 

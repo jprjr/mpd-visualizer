@@ -1,6 +1,6 @@
 #ifndef VIDEO_H
 #define VIDEO_H
-#include <skalibs/cbuffer.h>
+#include "ringbuf.h"
 
 extern const char avi_header[326];
 
@@ -27,8 +27,7 @@ typedef struct avi_stream {
 
     char *input_frame;
     char *output_frame;
-    char *frame_data;
-    cbuffer_t frames;
+    ringbuf_t frames;
 } avi_stream;
 
 #define AVI_STREAM_ZERO { \
@@ -48,8 +47,7 @@ typedef struct avi_stream {
   .video_frame_header = NULL, \
   .audio_frame_header = NULL, \
   .input_frame = NULL, \
-  .frame_data = NULL, \
-  .frames = CBUFFER_ZERO, \
+  .frames = NULL, \
 }
 
 #ifdef __cplusplus

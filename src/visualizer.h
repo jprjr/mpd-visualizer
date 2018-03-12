@@ -30,7 +30,6 @@ typedef struct visualizer {
     const char *output_fifo;
     char *buffer;
     int buffer_len;
-    int bytes_to_read;
     struct mpd_connection *mpd_conn;
     struct mpd_status *mpd_stat;
     struct mpd_song *cur_song;
@@ -56,7 +55,6 @@ typedef struct visualizer {
   .lua_folder = NULL, \
   .output_fifo = NULL, \
   .buffer = NULL, \
-  .bytes_to_read = 0, \
   .mpd_conn = NULL, \
   .mpd_stat = NULL, \
   .cur_song = NULL, \

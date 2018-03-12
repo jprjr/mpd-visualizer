@@ -129,7 +129,7 @@ static void stereo_downmix(audio_processor *processor) {
 
 
 void audio_processor_fftw(audio_processor *processor) {
-    cbuffer_get(&(processor->samples),processor->output_buffer,processor->output_buffer_len);
+    ringbuf_memcpy_from(processor->output_buffer,processor->samples,processor->output_buffer_len);
     (processor->audio_downmix_func)(processor);
 
     unsigned int i = 0;
@@ -189,7 +189,6 @@ audio_processor_init(audio_processor *processor) {
     double bin_size = 0.0f;
     double freq_ratio = 0.0f;
     double freq_range = 20000.0f - 50.0f;
-    char *sample_buffer = NULL;
 
     if(processor->channels > 2) {
         strerr_warn1x("Too many channels, max is 2");
@@ -228,11 +227,10 @@ audio_processor_init(audio_processor *processor) {
         processor->audio_downmix_func = &mono_downmix;
     }
 
-    sample_buffer = (char *)malloc(1 + (processor->output_buffer_len * 4));
-    if(sample_buffer == NULL) {
+    processor->samples = ringbuf_new(processor->output_buffer_len * 4);
+    if(!processor->samples) {
         return audio_processor_free(processor);
     }
-    cbuffer_init(&(processor->samples),sample_buffer,1 + (processor->output_buffer_len * 4));
 
     processor->window = (double *)malloc(sizeof(double) * processor->sample_window_len);
     if(!processor->window) {
@@ -301,8 +299,8 @@ audio_processor_init(audio_processor *processor) {
 
 int
 audio_processor_free(audio_processor *processor) {
-    if(processor->samples.x) {
-        free(processor->samples.x);
+    if(processor->samples) {
+        ringbuf_free(&(processor->samples));
     }
 
     if(processor->window) free(processor->window);

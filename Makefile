@@ -22,8 +22,10 @@ LIBSRCS = \
   src/audio.c \
   src/avi_header.c \
   src/image.c \
+  src/lua-audio.c \
   src/lua-file.c \
   src/lua-image.c \
+  src/ringbuf.c \
   src/thread.c \
   src/video.c \
   src/visualizer.c
@@ -35,6 +37,7 @@ LIBOBJS = \
   src/lua-audio.o \
   src/lua-file.o \
   src/lua-image.o \
+  src/ringbuf.o \
   src/thread.o \
   src/video.o \
   src/visualizer.o
