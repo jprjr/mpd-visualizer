@@ -12,7 +12,7 @@ AVI FIFO can be read by ffmpeg and encoded to an appropriate format.
 # Usage
 
 ```bash
-visualizer \
+mpd-visualizer \
   -w (width) \
   -h (height) \
   -f (framerate) \
@@ -20,9 +20,17 @@ visualizer \
   -c (audio channels) \
   -s (audio samplesize (in bytes)) \
   -b (number of visualizer bars to calculate) \
-  -i /path/to/audio.fifo \
-  -o /path/to/video.fifo \
-  -l /path/to/Lua/folder
+  -i /path/to/audio.fifo (or - for stdin) \
+  -o /path/to/video.fifo (or - for stdout) \
+  -l /path/to/Lua/folder \
+  -m (1|0) enable/disable mpd polling (default enabled) \
+Following options only valid when -m=0
+  -t title
+  -a artist
+  -A album
+  -F filename
+  -T totaltime (in seconds)
+
 ```
 
 ## Option details
@@ -34,9 +42,18 @@ visualizer \
 * `-c (channels)`: Audio channels, ie: `-c 2`
 * `-s (samplesize)`: Audio samplesize in bytes, ie `-s 2` for 16-bit audio
 * `-b (bars)`: number of visualizer bars to calculate
-* `-i /path`: Path to your MPD FIFO
-* `-o /path`: Path to your video FIFO
+* `-i /path`: Path to your MPD FIFO (or - for stdin)
+* `-o /path`: Path to your video FIFO (or - for stdin)
 * `-l /path`: Path to folder of Lua scripts
+* `-m (1|0)`: Enable/disable MPD polling (default enabled)
+
+If you disable MPD polling, you can manually set a few properties, these
+will show up in Lua's `song` object.
+*  `-t title`
+*  `-a artist`
+*  `-A album`
+*  `-F filename`
+*  `-T totaltime (in seconds)`
 
 ## Requirements
 
@@ -55,7 +72,7 @@ copy `config.mak.dist` to `config.mak` and edit as-needed.
 
 ## What happens
 
-When `mpd-visualizer` starts up, it will start reading in audio from the MPD FIFO. As
+When `mpd-visualizer` starts up, it will start reading in audio from the MPD FIFO (or stdin). As
 soon as it has enough audio to generate frames of video, it will start doing so. If your
 video FIFO does not exist, it will create it (and automatically delete it when it exits).
 If the video FIFO already exists, it uses it, and does NOT delete it when it exits.
