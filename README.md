@@ -252,7 +252,7 @@ The `file` object has a simple method for listing files in a directory:
 
 ### The global `song` object
 
-The `song` object has metadata on the current song. The only guaranteed keys are `file`, `id`, `elapsed`, and `total`. Everything else can be nil.
+The `song` object has metadata on the current song. The only guaranteed key is `elapsed`. Everything else can be nil (if you're connected to MPD, then `file`, `id`, and `total` are also guaranteed).
 
 * `song.file` - the filename of the playing song
 * `song.id` - the id of the playing song
