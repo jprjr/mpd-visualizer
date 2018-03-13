@@ -123,9 +123,7 @@ int main(int argc, char const *const *argv) {
     vis->argv = argv;
 
     if(!visualizer_init(vis)) dieusage();
-    while( (loopres = visualizer_loop(vis)) != -1) {
-        // todo - hot C reload
-    }
+    visualizer_loop(vis);
     visualizer_cleanup(vis);
 
 

@@ -44,7 +44,29 @@ typedef struct lua_func_list {
 extern "C" {
 #endif
 
-static lua_func_list *
+static inline ssize_t
+vis_ringbuf_write(int fd, ringbuf_t rb, size_t count)
+{
+    size_t bytes_used = ringbuf_bytes_used(rb);
+    if (count > bytes_used)
+        return 0;
+
+    const uint8_t *bufend = ringbuf_end(rb);
+    count = MIN((unsigned)(bufend - rb->tail), count);
+    ssize_t n = fd_write(fd, (char *)rb->tail, count);
+    if (n > 0) {
+        rb->tail += n;
+
+        /* wrap? */
+        if (rb->tail == bufend)
+            rb->tail = rb->buf;
+
+    }
+
+    return n;
+}
+
+static inline lua_func_list *
 lua_func_list_find(genalloc *list, const char *filename) {
     lua_func_list *func = NULL;
     unsigned int i = 0;
@@ -65,7 +87,7 @@ visualizer_set_image_cb(void (*lua_image_cb)(lua_State *L, intptr_t table_ref, u
     global_vis->lua_image_cb = lua_image_cb;
 }
 
-static void
+static inline void
 lua_func_list_free(visualizer *vis, genalloc *list) {
     unsigned long i;
     for(i=0;i<func_list_len(list);i++) {
@@ -181,7 +203,6 @@ visualizer_free(visualizer *vis) {
     avi_stream_free(&(vis->stream));
     audio_processor_free(&(vis->processor));
 
-    if(vis->buffer) free(vis->buffer);
     if(vis->mpd_stat) mpd_status_free(vis->mpd_stat);
     if(vis->cur_song) mpd_song_free(vis->cur_song);
     if(vis->cur_msg) mpd_message_free(vis->cur_msg);
@@ -193,30 +214,24 @@ visualizer_free(visualizer *vis) {
     return 0;
 }
 
-static int
+static inline int
 visualizer_grab_audio(visualizer *vis, int fd) {
     int bytes_read = 0;
-    int samples_read = 0;
 
-    bytes_read = fd_read(fd,vis->buffer,vis->processor.output_buffer_len);
+    bytes_read = ringbuf_read(fd,vis->processor.samples,ringbuf_bytes_free(vis->processor.samples));
     if(bytes_read <= 0) {
         strerr_warn1sys("Problem grabbing audio data: ");
         return bytes_read;
     }
-    ringbuf_memcpy_into(
-        vis->processor.samples,
-        vis->buffer,
-        bytes_read);
 
-    samples_read = bytes_read / (vis->processor.channels * vis->processor.samplesize);
+    vis->processor.samples_available = ringbuf_bytes_used(vis->processor.samples) / (vis->processor.channels * vis->processor.samplesize);
 
-    vis->processor.samples_available += samples_read;
-
-    return samples_read;
+    return vis->processor.samples_available;
 }
 
 
-static void visualizer_free_metadata(visualizer *vis) {
+static inline void
+visualizer_free_metadata(visualizer *vis) {
     if(vis->mpd_stat) {
         mpd_status_free(vis->mpd_stat);
         vis->mpd_stat = NULL;
@@ -231,7 +246,8 @@ static void visualizer_free_metadata(visualizer *vis) {
     }
 }
 
-static void visualizer_get_metadata(visualizer *vis) {
+static inline void
+visualizer_get_metadata(visualizer *vis) {
     if(!vis->mpd) {
         lua_getglobal(vis->Lua,"song");
         lua_pushinteger(vis->Lua,vis->elapsed_ms / 1000);
@@ -334,8 +350,9 @@ static void visualizer_get_metadata(visualizer *vis) {
 }
 
 
-static int
+static inline int
 visualizer_make_frames(visualizer *vis) {
+    int frames = 0;
     unsigned long i = 0;
     image_q *q = NULL;
 
@@ -387,19 +404,13 @@ visualizer_make_frames(visualizer *vis) {
 
         wake_queue();
 
-        if(ringbuf_bytes_free(vis->stream.frames) < vis->stream.frame_len) {
-            fprintf(stderr,"Warning: overwriting old video frame\n");
-        }
         ringbuf_memcpy_into(vis->stream.frames,vis->stream.input_frame,vis->stream.frame_len);
 
-        vis->processor.samples_available -= vis->processor.sample_window_len;
+        vis->processor.samples_available = ringbuf_bytes_used(vis->processor.samples) / (vis->processor.channels * vis->processor.samplesize);
+        frames++;
     }
 
-    if(ringbuf_is_full(vis->stream.frames)) {
-        return 0;
-    }
-
-    return 1;
+    return frames;
 }
 
 int
@@ -474,7 +485,7 @@ visualizer_init(visualizer *vis) {
         vis->samplerate,
         vis->channels,
         vis->samplesize)) {
-        fprintf(stderr,"Error initializing AVI stream\n");
+        strerr_warn1x("Error initializing AVI stream");
         return visualizer_free(vis);
     }
 
@@ -485,17 +496,8 @@ visualizer_init(visualizer *vis) {
     vis->processor.spectrum_len = vis->bars;
 
     if(!audio_processor_init(&(vis->processor))) {
-        fprintf(stderr,"Error initializing audio processor\n");
+        strerr_warn1x("Error initializing audio processor");
         return visualizer_free(vis);
-    }
-
-    vis->buffer_len = vis->samplerate * vis->channels * vis->samplesize * 4;
-
-    vis->buffer = (char *)malloc(vis->buffer_len);
-    if(!vis->buffer) {
-        fprintf(stderr,"Error mallocing buffer\n");
-        visualizer_free(vis);
-        return 0;
     }
 
     vis->fds[0].fd = selfpipe_init();
@@ -538,7 +540,7 @@ visualizer_init(visualizer *vis) {
     vis->Lua = 0;
     vis->Lua = luaL_newstate();
     if(!vis->Lua) {
-        fprintf(stderr,"Error loading Lua\n");
+        strerr_warn1x("Error loading Lua");
         visualizer_free(vis);
         return 0;
     }
@@ -657,6 +659,7 @@ visualizer_init(visualizer *vis) {
         }
         ndelay_off(vis->fds[2].fd);
         avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
+        ndelay_on(vis->fds[2].fd);
     }
 
     if(vis->own_fifo < 0) {
@@ -694,23 +697,38 @@ visualizer_init(visualizer *vis) {
 
 int
 visualizer_loop(visualizer *vis) {
+    while(1) {
     int events = 0;
     int signal = 0;
-    int frametest = 0;
 
     if(vis->fds[2].fd == -1) {
         vis->fds[2].fd = open_write(vis->output_fifo);
         if(vis->fds[2].fd > -1) {
-            fprintf(stderr,"Opened fifo\n");
             vis->fds[2].revents = 0;
             vis->fds[2].events = IOPAUSE_EXCEPT;
             ndelay_off(vis->fds[2].fd);
             avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
+            ndelay_on(vis->fds[2].fd);
         }
     }
 
-    if(vis->delay_active) {
+    visualizer_make_frames(vis);
+
+    /* figure out what events we need */
+    if(ringbuf_bytes_free(vis->processor.samples)) {
+        vis->fds[1].events = IOPAUSE_EXCEPT | IOPAUSE_READ;
+    }
+    else {
         vis->fds[1].events = IOPAUSE_EXCEPT;
+    }
+
+    if(ringbuf_bytes_used(vis->stream.frames)) {
+        if(vis->fds[2].fd == -1) {
+            ringbuf_reset(vis->stream.frames);
+        }
+        else {
+            vis->fds[2].events = IOPAUSE_EXCEPT | IOPAUSE_WRITE;
+        }
     }
 
     events = iopause_stamp(vis->fds,4,NULL,NULL);
@@ -718,8 +736,12 @@ visualizer_loop(visualizer *vis) {
     if(events && vis->fds[0].revents & IOPAUSE_READ) {
         signal = selfpipe_read();
         switch(signal) {
-            case SIGINT: return -1;
-            case SIGTERM: return -1;
+            case SIGINT:
+            /* fall through */
+            case SIGTERM:
+                strerr_warn1x("Caught INT/TERM, exiting");
+                return -1;
+                break;
             case SIGUSR1: {
                 strerr_warn1x("Reloading images/scripts");
                 visualizer_load_scripts(vis);
@@ -735,14 +757,12 @@ visualizer_loop(visualizer *vis) {
 
     if(events && vis->fds[2].revents & IOPAUSE_WRITE) {
         unsigned int rem = ringbuf_bytes_used(vis->stream.frames);
-        if( rem >= vis->stream.frame_len ) {
-            int b = ringbuf_write(vis->fds[2].fd,vis->stream.frames,vis->stream.frame_len);
-            if( b == -1) {
-                goto closefifo;
-            }
-            rem -= b;
-            vis->delay_active = 0;
+        int b = vis_ringbuf_write(vis->fds[2].fd,vis->stream.frames,rem);
+
+        if( b == -1) {
+            goto closefifo;
         }
+        rem -= b;
 
         if( rem == 0 ) {
             vis->fds[2].events = IOPAUSE_EXCEPT;
@@ -750,34 +770,26 @@ visualizer_loop(visualizer *vis) {
     }
 
     if(events && vis->fds[1].revents & IOPAUSE_EXCEPT) {
+        strerr_warn1x("exception/error on input pipe/fifo, exiting");
         return -1;
     }
 
     if(events && vis->fds[1].revents & IOPAUSE_READ) {
-        if(visualizer_grab_audio(vis,vis->fds[1].fd) <= 0) return -1;
-        frametest = visualizer_make_frames(vis);
-        if(ringbuf_bytes_used(vis->stream.frames)) {
-            if(vis->fds[2].fd == -1) {
-                ringbuf_reset(vis->stream.frames);
-            }
-            else {
-                vis->fds[2].events = IOPAUSE_WRITE | IOPAUSE_EXCEPT;
-            }
-        }
-        if(frametest == 0) {
-            vis->delay_active = 1;
+        if(visualizer_grab_audio(vis,vis->fds[1].fd) < 0) {
+            strerr_warn1x("grab_audio returned <= 0, exiting");
+            return -1;
         }
     }
 
 
     if(events && vis->fds[2].revents & IOPAUSE_EXCEPT) {
         closefifo:
-        fprintf(stderr,"Closing fifo\n");
         fd_close(vis->fds[2].fd);
         vis->fds[2].revents = 0;
         vis->fds[2].events = 0;
         vis->stream.output_frame_rem = 0;
-        if(vis->fds[2].fd == fileno(stdout)) {
+        if(strcmp(vis->output_fifo,"-") == 0) {
+            strerr_warn1x("output pipe closed, exiting");
             return -1;
         }
         vis->fds[2].fd = -1;
@@ -788,6 +800,7 @@ visualizer_loop(visualizer *vis) {
         mpd_response_finish(vis->mpd_conn);
         visualizer_get_metadata(vis);
         mpd_send_idle_mask(vis->mpd_conn, MPD_IDLE_PLAYER | MPD_IDLE_MESSAGE);
+    }
     }
 
     return 0;

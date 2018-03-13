@@ -129,7 +129,10 @@ static void stereo_downmix(audio_processor *processor) {
 
 
 void audio_processor_fftw(audio_processor *processor) {
-    ringbuf_memcpy_from(processor->output_buffer,processor->samples,processor->output_buffer_len);
+    if(ringbuf_memcpy_from(processor->output_buffer,processor->samples,processor->output_buffer_len) == NULL) {
+        fprintf(stderr,"Warning - tried to underflow\n");
+        return;
+    }
     (processor->audio_downmix_func)(processor);
 
     unsigned int i = 0;
