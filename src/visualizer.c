@@ -221,7 +221,7 @@ visualizer_grab_audio(visualizer *vis, int fd) {
     bytes_read = ringbuf_read(fd,vis->processor.samples,ringbuf_bytes_free(vis->processor.samples));
     if(bytes_read <= 0) {
         strerr_warn1sys("Problem grabbing audio data: ");
-        return bytes_read;
+        return -1;
     }
 
     vis->processor.samples_available = ringbuf_bytes_used(vis->processor.samples) / (vis->processor.channels * vis->processor.samplesize);
@@ -769,16 +769,16 @@ visualizer_loop(visualizer *vis) {
         }
     }
 
-    if(events && vis->fds[1].revents & IOPAUSE_EXCEPT) {
-        strerr_warn1x("exception/error on input pipe/fifo, exiting");
-        return -1;
-    }
-
     if(events && vis->fds[1].revents & IOPAUSE_READ) {
         if(visualizer_grab_audio(vis,vis->fds[1].fd) < 0) {
             strerr_warn1x("grab_audio returned <= 0, exiting");
             return -1;
         }
+    }
+
+    if(events && vis->fds[1].revents & IOPAUSE_EXCEPT) {
+        strerr_warn1x("exception/error on input pipe/fifo, exiting");
+        return -1;
     }
 
 
@@ -807,36 +807,20 @@ visualizer_loop(visualizer *vis) {
 }
 
 int visualizer_cleanup(visualizer *vis) {
-    int rem = 0;
-    int n = 0;
+    int draining = 0;
     if(vis->fds[2].fd != -1) {
-        rem = ringbuf_bytes_used(vis->stream.frames);
-
-        while(rem > 0) {
-            n = ringbuf_write(vis->fds[2].fd,vis->stream.frames,rem);
-            if(n<0) {
-                ringbuf_reset(vis->stream.frames);
-                ringbuf_reset(vis->processor.samples);
-                rem = 0;
-                n = 0;
+        draining = 1;
+        while(draining) {
+            ndelay_off(vis->fds[2].fd);
+            if(vis_ringbuf_write(vis->fds[2].fd,vis->stream.frames,ringbuf_bytes_used(vis->stream.frames)) < 0) {
+                draining = 0;
             }
-            rem -= n;
-        }
-
-        while(ringbuf_bytes_used(vis->processor.samples)>=vis->processor.output_buffer_len || ringbuf_bytes_used(vis->stream.frames) >= vis->stream.frame_len) {
             visualizer_make_frames(vis);
-            rem = ringbuf_bytes_used(vis->stream.frames);
-
-            while(rem > 0) {
-                ringbuf_write(vis->fds[2].fd,vis->stream.frames,rem);
-                if(n<0) {
-                    ringbuf_reset(vis->stream.frames);
-                    ringbuf_reset(vis->processor.samples);
-                    rem = 0;
-                    n = 0;
-                }
-                rem -= n;
+            if(ringbuf_bytes_used(vis->processor.samples) < vis->processor.output_buffer_len &&
+               ringbuf_bytes_used(vis->stream.frames) < vis->stream.frame_len) {
+                draining = 0;
             }
+
         }
         fd_close(vis->fds[2].fd);
     }
