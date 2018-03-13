@@ -1,13 +1,17 @@
 # mpd-visualizer
 
-This is a program for creating videos from MPD, using Lua. It's suitable for using in
-a never-ending livestream.
+This is a program primarily for creating videos from MPD, using Lua. It's suitable for using in
+a never-ending livestream. However, you can use it without MPD and
+create videos offline.
 
-It reads audio data from an MPD FIFO, and runs one or more Lua scripts
+It reads audio data from a file, pipe, or FIFO, and runs one or more Lua scripts
 to create a video.
 
-Video is output to a FIFO as an AVI stream with raw audio and video. This
-AVI FIFO can be read by ffmpeg and encoded to an appropriate format.
+Video is output to a FIFO or pipe as an AVI stream with raw audio and video. This
+AVI FIFO can be read by ffmpeg and encoded to an appropriate format. It will refuse
+to write the video to a regular file, as its a very, very high bitrate (though
+you could always just output to stdout and redirect to a file if you really want
+to).
 
 # Usage
 
@@ -22,14 +26,15 @@ mpd-visualizer \
   -b (number of visualizer bars to calculate) \
   -i /path/to/audio.fifo (or - for stdin) \
   -o /path/to/video.fifo (or - for stdout) \
-  -l /path/to/Lua/folder \
+  -l /path/to/your/lua/scripts/folder \
   -m (1|0) enable/disable mpd polling (default enabled) \
-Following options only valid when -m=0
-  -t title
-  -a artist
-  -A album
-  -F filename
-  -T totaltime (in seconds)
+# Following options only valid when -m=0 \
+  -t title \
+  -a artist \
+  -A album \
+  -F filename \
+  -T totaltime (in seconds) \
+  -- optional process to launch
 
 ```
 
@@ -55,6 +60,61 @@ will show up in Lua's `song` object.
 *  `-F filename`
 *  `-T totaltime (in seconds)`
 
+Additionally, anything given on the command line after your options
+will be launched as a child process, and video data will be input to
+its standard input. In this mode, whatever you gave for `-o` is ignored.
+
+This allows you do things like:
+
+```bash
+mpd-visualizer \
+  -w 1280 \
+  -h 720 \
+  -f 30 \
+  -r 48000 \
+  -c 2 \
+  -s 2 \
+  -b 20 \
+  -i /some-fifo \
+  -l some-folder \
+  -- \
+  ffmpeg \
+  -re \
+  -i pipe:0 \
+  -c:v libx264 \
+  -c:a aac \
+  -strict -2 \
+  -f flv rtmp://some-host/whatever
+```
+
+This way, you can use MPD's "pipe" output type with mpd-visualizer. So MPD
+will launch mpd-visualizer, and mpd-visualizer will launch ffmpeg.
+
+Additional ideas:
+
+**Turn a single song into a video (without MPD)**
+
+```bash
+ffmpeg -i some-song.mp3 -f s16le -ac 2 -ar 48000 | \
+mpd-visualizer \
+  -w 1280 \
+  -h 720 \
+  -f 30 \
+  -r 48000 \
+  -c 2 \
+  -s 2 \
+  -b 20 \
+  -i - \
+  -o - \
+  -l some-folder \
+  -m 0 \
+  -t "Some Song" \
+  -a "Some Artist" \
+  -A "Some Album" \
+  -- \
+ffmpeg -i pipe:0 -c:v libx264 -c:a aac -strict -2 -y some-file.mp4
+```
+
 ## Requirements
 
 * LuaJIT or Lua 5.3.
@@ -77,7 +137,8 @@ soon as it has enough audio to generate frames of video, it will start doing so.
 video FIFO does not exist, it will create it (and automatically delete it when it exits).
 If the video FIFO already exists, it uses it, and does NOT delete it when it exits.
 
-It also connects to MPD as a client to poll song metadata.
+It also connects to MPD as a client to poll song metadata, it only polls when MPD
+reports the song has changed in some way. You can also disable MPD polling entirely.
 
 At startup, it will iterate through your Lua scripts folder and try loading scripts.
 Your scripts should return either a Lua function, or a table of functions, like:
@@ -120,7 +181,7 @@ When it receives a `USR1` signal, it will reload all `Lua` scripts.
 
 `mpd-visualizer` will keep running until either:
 
-* MPD closes the FIFO because it has quit
+* the input audio stream ends
 * `mpd-visualizer` receives a `INT` or `TERM` signal.
 
 # The Lua environment
