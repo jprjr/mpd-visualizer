@@ -657,7 +657,8 @@ visualizer_init(visualizer *vis) {
             vis->fds[2].fd = fileno(stdout);
         }
         ndelay_off(vis->fds[2].fd);
-        fprintf(stderr,"Write result: %d\n",avi_stream_write_header(&(vis->stream),vis->fds[2].fd));
+        avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
+        ndelay_on(vis->fds[2].fd);
     }
 
     if(vis->own_fifo < 0) {
@@ -669,12 +670,12 @@ visualizer_init(visualizer *vis) {
         if(vis->fds[1].fd == -1) {
             strerr_die3sys(1,"Problem opening ",vis->input_fifo,": ");
         }
-        ndelay_off(vis->fds[2].fd);
+        ndelay_on(vis->fds[2].fd);
         fd_close(fileno(stdin));
     }
     else {
         vis->fds[1].fd = fileno(stdin);
-        ndelay_off(vis->fds[1].fd);
+        ndelay_on(vis->fds[1].fd);
     }
     vis->fds[1].events = IOPAUSE_READ;
 
@@ -705,6 +706,7 @@ visualizer_loop(visualizer *vis) {
             vis->fds[2].events = IOPAUSE_EXCEPT;
             ndelay_off(vis->fds[2].fd);
             avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
+            ndelay_on(vis->fds[2].fd);
         }
     }
 
