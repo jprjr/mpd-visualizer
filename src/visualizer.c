@@ -658,7 +658,6 @@ visualizer_init(visualizer *vis) {
         }
         ndelay_off(vis->fds[2].fd);
         avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
-        ndelay_on(vis->fds[2].fd);
     }
 
     if(vis->own_fifo < 0) {
@@ -670,7 +669,7 @@ visualizer_init(visualizer *vis) {
         if(vis->fds[1].fd == -1) {
             strerr_die3sys(1,"Problem opening ",vis->input_fifo,": ");
         }
-        ndelay_on(vis->fds[2].fd);
+        ndelay_on(vis->fds[1].fd);
         fd_close(fileno(stdin));
     }
     else {
@@ -706,7 +705,6 @@ visualizer_loop(visualizer *vis) {
             vis->fds[2].events = IOPAUSE_EXCEPT;
             ndelay_off(vis->fds[2].fd);
             avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
-            ndelay_on(vis->fds[2].fd);
         }
     }
 
@@ -732,15 +730,17 @@ visualizer_loop(visualizer *vis) {
 
     if(events && vis->fds[2].revents & IOPAUSE_WRITE) {
         int rem = ringbuf_bytes_used(vis->stream.frames);
+        fprintf(stderr,"frame_bytes: %d\n");
         if( rem > 0 ) {
             int b = ringbuf_write(vis->fds[2].fd,vis->stream.frames,rem);
+            fprintf(stderr,"b: %d\n",b);
             if( b == -1) {
                 goto closefifo;
             }
             rem -= b;
         }
 
-        if( rem == 0) {
+        if( rem == 0 ) {
             vis->fds[2].events = IOPAUSE_EXCEPT;
         }
 
@@ -749,11 +749,13 @@ visualizer_loop(visualizer *vis) {
     if(events && vis->fds[1].revents & IOPAUSE_READ) {
         if(visualizer_grab_audio(vis,vis->fds[1].fd) <= 0) return -1;
         visualizer_make_frames(vis);
-        if(vis->fds[2].fd == -1) {
-            ringbuf_reset(vis->stream.frames);
-        }
-        else {
-            vis->fds[2].events = IOPAUSE_WRITE | IOPAUSE_EXCEPT;
+        if(ringbuf_bytes_used(vis->stream.frames)) {
+            if(vis->fds[2].fd == -1) {
+                ringbuf_reset(vis->stream.frames);
+            }
+            else {
+                vis->fds[2].events = IOPAUSE_WRITE | IOPAUSE_EXCEPT;
+            }
         }
     }
 
