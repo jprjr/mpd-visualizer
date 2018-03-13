@@ -25,6 +25,8 @@ typedef struct visualizer {
     unsigned int mpd;
     unsigned int ms_per_frame;
     uint64_t elapsed_ms;
+    uint32_t delay;
+    int delay_active;
     const char *lua_folder;
     const char *input_fifo;
     const char *output_fifo;
@@ -89,6 +91,8 @@ typedef struct visualizer {
   .mpd = 1, \
   .totaltime = -1, \
   .elapsed_ms = 0, \
+  .delay = 0, \
+  .delay_active = 0, \
 }
 
 #ifdef __cplusplus
