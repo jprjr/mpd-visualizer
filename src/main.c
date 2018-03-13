@@ -34,7 +34,6 @@ int main(int argc, char const *const *argv) {
     visualizer _vis = VISUALIZER_ZERO;
     visualizer *vis = &_vis;
 
-    int loopres = 0;
     char opt = 0;
     unsigned int totaltime = 0;
 
