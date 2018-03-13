@@ -95,7 +95,7 @@ Additional ideas:
 **Turn a single song into a video (without MPD)**
 
 ```bash
-ffmpeg -i some-song.mp3 -f s16le -ac 2 -ar 48000 | \
+ffmpeg -i some-song.mp3 -f s16le -ac 2 -ar 48000 - | \
 mpd-visualizer \
   -w 1280 \
   -h 720 \
