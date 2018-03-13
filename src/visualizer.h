@@ -46,10 +46,14 @@ typedef struct visualizer {
     const char *artist;
     const char *album;
     const char *filename;
+    char const *const *argv;
+    int argc;
     int totaltime;
 } visualizer;
 
 #define VISUALIZER_ZERO { \
+  .argv = NULL, \
+  .argc = 0, \
   .stream = AVI_STREAM_ZERO, \
   .processor = AUDIO_PROCESSOR_ZERO, \
   .lua_folder = NULL, \

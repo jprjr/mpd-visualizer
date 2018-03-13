@@ -40,7 +40,7 @@ int main(int argc, char const *const *argv) {
 
     subgetopt_t l = SUBGETOPT_ZERO;
 
-    while((opt = subgetopt_r(argc,argv,"w:h:f:r:c:s:b:i:o:l:m:t:a:A:F:T:",&l)) != -1 ) {
+    while((opt = subgetopt_r(argc,argv,":w:h:f:r:c:s:b:i:o:l:m:t:a:A:F:T:",&l)) != -1 ) {
         switch(opt) {
             case 'w': {
                 if(!uint_scan(l.arg,&(vis->video_width))) dieusage();
@@ -111,6 +111,16 @@ int main(int argc, char const *const *argv) {
             default: dieusage();
         }
     }
+
+    argc -= l.ind;
+    argv += l.ind;
+
+    if(argc) {
+        vis->output_fifo = "-";
+    }
+
+    vis->argc = argc;
+    vis->argv = argv;
 
     if(!visualizer_init(vis)) dieusage();
     while( (loopres = visualizer_loop(vis)) != -1) {

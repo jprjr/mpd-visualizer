@@ -647,9 +647,17 @@ visualizer_init(visualizer *vis) {
     }
     else {
         vis->own_fifo = 0;
-        vis->fds[2].fd = fileno(stdout);
-        avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
+        if(vis->argc) {
+            if(child_spawn1_pipe(vis->argv[0], vis->argv, (char const *const *)environ, &(vis->fds[2].fd), 0) <= 0) {
+                strerr_die1x(1,"Problem spawning child process");
+            }
+            fprintf(stderr,"fd: %d\n",vis->fds[2].fd);
+        }
+        else {
+            vis->fds[2].fd = fileno(stdout);
+        }
         ndelay_off(vis->fds[2].fd);
+        fprintf(stderr,"Write result: %d\n",avi_stream_write_header(&(vis->stream),vis->fds[2].fd));
     }
 
     if(vis->own_fifo < 0) {
@@ -697,7 +705,6 @@ visualizer_loop(visualizer *vis) {
             vis->fds[2].events = IOPAUSE_EXCEPT;
             ndelay_off(vis->fds[2].fd);
             avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
-            // ndelay_on(vis->fds[2].fd);
         }
     }
 
@@ -721,6 +728,22 @@ visualizer_loop(visualizer *vis) {
         }
     }
 
+    if(events && vis->fds[2].revents & IOPAUSE_WRITE) {
+        int rem = ringbuf_bytes_used(vis->stream.frames);
+        if( rem > 0 ) {
+            int b = ringbuf_write(vis->fds[2].fd,vis->stream.frames,rem);
+            if( b == -1) {
+                goto closefifo;
+            }
+            rem -= b;
+        }
+
+        if( rem == 0) {
+            vis->fds[2].events = IOPAUSE_EXCEPT;
+        }
+
+    }
+
     if(events && vis->fds[1].revents & IOPAUSE_READ) {
         if(visualizer_grab_audio(vis,vis->fds[1].fd) <= 0) return -1;
         visualizer_make_frames(vis);
@@ -730,24 +753,6 @@ visualizer_loop(visualizer *vis) {
         else {
             vis->fds[2].events = IOPAUSE_WRITE | IOPAUSE_EXCEPT;
         }
-    }
-
-    if(events && vis->fds[2].revents & IOPAUSE_WRITE) {
-        if( ringbuf_bytes_used(vis->stream.frames) >= 8192) {
-            int rem = 8192;
-            int b = 0;
-            do {
-                b = ringbuf_write(vis->fds[2].fd,vis->stream.frames,rem);
-                if( b == -1 ) {
-                    goto closefifo;
-                }
-                rem -= b;
-            } while(rem > 0);
-        }
-        else {
-            vis->fds[2].events = IOPAUSE_EXCEPT;
-        }
-
     }
 
 
