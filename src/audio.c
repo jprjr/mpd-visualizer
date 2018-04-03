@@ -230,7 +230,7 @@ audio_processor_init(audio_processor *processor) {
         processor->audio_downmix_func = &mono_downmix;
     }
 
-    processor->samples = ringbuf_new(processor->output_buffer_len * 4);
+    processor->samples = ringbuf_new(processor->output_buffer_len * processor->framerate); /* 1 second of audio */
     if(!processor->samples) {
         return audio_processor_free(processor);
     }
