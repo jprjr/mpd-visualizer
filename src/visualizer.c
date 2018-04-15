@@ -2,6 +2,7 @@
 #include <lualib.h>
 #include <lauxlib.h>
 #include <skalibs/skalibs.h>
+#include <skalibs/bytestr.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -17,6 +18,7 @@
 #include "lua-audio.h"
 #include "lua-image.h"
 #include "lua-file.h"
+#include "ringbuf.h"
 
 
 #define func_list_len(g) genalloc_len(lua_func_list,g)
@@ -25,6 +27,15 @@
 #define func_list_append(g, p) genalloc_append(lua_func_list,g, p)
 
 static visualizer *global_vis;
+
+static stralloc mpd_songid   = STRALLOC_ZERO;
+static stralloc mpd_elapsed  = STRALLOC_ZERO;
+static stralloc mpd_duration = STRALLOC_ZERO;
+static stralloc mpd_time     = STRALLOC_ZERO;
+static stralloc mpd_file     = STRALLOC_ZERO;
+static stralloc mpd_title    = STRALLOC_ZERO;
+static stralloc mpd_album    = STRALLOC_ZERO;
+static stralloc mpd_artist   = STRALLOC_ZERO;
 
 typedef struct lua_func_list {
     int frame_ref;
@@ -198,14 +209,21 @@ visualizer_load_scripts(visualizer *vis) {
 
 static int
 visualizer_free(visualizer *vis) {
+    stralloc_free(&mpd_songid);
+    stralloc_free(&mpd_elapsed);
+    stralloc_free(&mpd_duration);
+    stralloc_free(&mpd_time);
+    stralloc_free(&mpd_file);
+    stralloc_free(&mpd_title);
+    stralloc_free(&mpd_album);
+    stralloc_free(&mpd_artist);
     lua_func_list_free(vis, &(vis->lua_funcs));
     thread_queue_term(&(vis->image_queue));
     avi_stream_free(&(vis->stream));
     audio_processor_free(&(vis->processor));
 
-    if(vis->mpd_stat) mpd_status_free(vis->mpd_stat);
-    if(vis->cur_song) mpd_song_free(vis->cur_song);
-    if(vis->cur_msg) mpd_message_free(vis->cur_msg);
+    if(vis->mpd_q) ringbuf_free(&(vis->mpd_q));
+    if(vis->mpd_buf) ringbuf_free(&(vis->mpd_buf));
     if(vis->mpd_conn) mpd_connection_free(vis->mpd_conn);
     if(vis->Lua) {
         luaclose_image();
@@ -231,122 +249,304 @@ visualizer_grab_audio(visualizer *vis, int fd) {
 
 
 static inline void
-visualizer_free_metadata(visualizer *vis) {
-    if(vis->mpd_stat) {
-        mpd_status_free(vis->mpd_stat);
-        vis->mpd_stat = NULL;
+visualizer_mpd_idle(visualizer *vis) {
+    char d[4097];
+    int len = 0;
+    int i = 0;
+    unsigned int j = 0;
+    int ok = 0;
+    len = ringbuf_bytes_used(vis->mpd_buf);
+    ringbuf_memcpy_from(d,vis->mpd_buf,len);
+    d[len] = 0;
+
+    for(i=0; i<len; i+= str_chr(d+i,'\n')+1) {
+        if(case_starts(d+i,"ok")) {
+            ok = 1;
+            break;
+        }
+
+        j = str_chr(d+i,':') + 2;
+
+        while(d[i+j] != '\n') {
+          if(case_starts(d+i+j,"message")) {
+              ringbuf_append(vis->mpd_q,VIS_MPD_SEND_MESSAGE);
+              ringbuf_append(vis->mpd_q,VIS_MPD_READ_MESSAGE);
+              j += 7;
+              continue;
+          }
+          if(case_starts(d+i+j,"player")) {
+              j+= 6;
+              ringbuf_append(vis->mpd_q,VIS_MPD_SEND_STATUS);
+              ringbuf_append(vis->mpd_q,VIS_MPD_READ_STATUS);
+              ringbuf_append(vis->mpd_q,VIS_MPD_SEND_CURRENTSONG);
+              ringbuf_append(vis->mpd_q,VIS_MPD_READ_CURRENTSONG);
+              continue;
+          }
+        }
     }
-    if(vis->cur_song) {
-        mpd_song_free(vis->cur_song);
-        vis->cur_song = NULL;
+
+    if (ok) {
+      ringbuf_append(vis->mpd_q,VIS_MPD_SEND_IDLE);
+      ringbuf_append(vis->mpd_q,VIS_MPD_READ_IDLE);
+      i += 3;
+      vis->mpd_state = ringbuf_qget(vis->mpd_q);
     }
-    if(vis->cur_msg) {
-        mpd_message_free(vis->cur_msg);
-        vis->cur_msg = NULL;
+
+    if( (len - i) > 0) {
+      ringbuf_memcpy_into(vis->mpd_buf,d+i,len-i);
     }
 }
 
 static inline void
-visualizer_get_metadata(visualizer *vis) {
-    if(!vis->mpd) {
-        lua_getglobal(vis->Lua,"song");
-        lua_pushinteger(vis->Lua,vis->elapsed_ms / 1000);
-        lua_setfield(vis->Lua,-2,"elapsed");
-        return;
+visualizer_mpd_status(visualizer *vis) {
+    char d[4097];
+    int len = 0;
+    int i = 0;
+    unsigned int j = 0;
+    unsigned int t = 0;
+
+    int ok = 0;
+
+    len = ringbuf_bytes_used(vis->mpd_buf);
+    ringbuf_memcpy_from(d,vis->mpd_buf,len);
+    d[len] = 0;
+
+
+    for(i=0; i<len; i+= str_chr(d+i,'\n')+1) {
+        if(case_starts(d+i,"ok")) {
+            ok = 1;
+            break;
+        }
+
+        j = str_chr(d+i,':');
+
+        if(case_startb(d+i,7,"songid:")) {
+            if(!stralloc_catb(&mpd_songid,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
+            continue;
+        }
+        else if(case_startb(d+i,8,"elapsed:")) {
+            if(!stralloc_catb(&mpd_elapsed,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
+            continue;
+        }
+
+        else if(case_startb(d+i,9,"duration:")) {
+            if(!stralloc_catb(&mpd_duration,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
+            continue;
+        }
+        else if(case_startb(d+i,5,"time:")) {
+            if(!stralloc_catb(&mpd_time,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
+            continue;
+        }
+
     }
 
-    if(!vis->mpd_conn) {
-        return;
+    if (ok) {
+      i += 3;
+      lua_getglobal(vis->Lua,"song");
+
+      if(mpd_songid.len) {
+          stralloc_0(&mpd_songid);
+          uint32_scan(mpd_songid.s,&t);
+          lua_pushinteger(vis->Lua,t);
+      }
+      else {
+          lua_pushnil(vis->Lua);
+      }
+
+      lua_setfield(vis->Lua,-2,"id");
+
+      mpd_songid.len = 0;
+
+      if(mpd_elapsed.len) {
+          stralloc_0(&mpd_elapsed);
+          uint32_scan(mpd_elapsed.s,&t);
+          vis->elapsed_ms = t * 1000;
+          j = str_chr(mpd_elapsed.s,'.');
+          if(mpd_elapsed.s[j]) {
+              uint32_scan(mpd_elapsed.s + j + 1, &t);
+              vis->elapsed_ms += t;
+          }
+      }
+      else if (mpd_time.len) {
+          stralloc_0(&mpd_time);
+          uint32_scan(mpd_time.s,&t);
+          vis->elapsed_ms = t * 1000;
+      }
+      /* Just let it keep counting up */
+
+      mpd_elapsed.len = 0;
+
+      if(mpd_duration.len) {
+          stralloc_0(&mpd_duration);
+          uint32_scan(mpd_duration.s,&t);
+          lua_pushinteger(vis->Lua,t);
+          lua_setfield(vis->Lua,-2,"total");
+      }
+      else if (mpd_time.len) {
+          stralloc_0(&mpd_time);
+          j = str_chr(mpd_time.s,':');
+          if (mpd_time.s[j]) {
+              uint32_scan(mpd_time.s + j + 1, &t);
+              lua_pushinteger(vis->Lua,t);
+          }
+          lua_setfield(vis->Lua,-2,"total");
+      }
+      mpd_duration.len = 0;
+      mpd_time.len = 0;
+
+      lua_settop(vis->Lua,0);
+
+      vis->mpd_state = ringbuf_qget(vis->mpd_q);
     }
 
-    const char *title = NULL;
-    const char *album = NULL;
-    const char *artist = NULL;
-    const char *file = NULL;
-    const char *message = NULL;
-
-    if(!mpd_send_status(vis->mpd_conn)) {
-        strerr_warn2x("Error sending status: ",mpd_connection_get_error_message(vis->mpd_conn));
-        return;
+    if( (len - i) > 0) {
+      ringbuf_memcpy_into(vis->mpd_buf,d+i,len-i);
     }
-    vis->mpd_stat = mpd_recv_status(vis->mpd_conn);
-    if(!vis->mpd_stat) {
-        strerr_warn2x("Error receiving status: ",mpd_connection_get_error_message(vis->mpd_conn));
-        return;
-    }
-    mpd_response_finish(vis->mpd_conn);
+}
 
-    vis->elapsed_ms = mpd_status_get_elapsed_ms(vis->mpd_stat);
+static inline void
+visualizer_mpd_currentsong(visualizer *vis) {
+    char d[4097];
+    int len = 0;
+    int i = 0;
+    unsigned int j = 0;
+
+    int ok = 0;
+
+    len = ringbuf_bytes_used(vis->mpd_buf);
+    ringbuf_memcpy_from(d,vis->mpd_buf,len);
+    d[len] = 0;
+
+    for(i=0; i<len; i+= str_chr(d+i,'\n')+1) {
+        if(case_starts(d+i,"ok")) {
+            ok = 1;
+            break;
+        }
+
+        j = str_chr(d+i,':');
+
+        if(case_startb(d+i,5,"file:")) {
+            if(!stralloc_catb(&mpd_file,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
+            continue;
+        }
+        else if(case_startb(d+i,6,"title:")) {
+            if(!stralloc_catb(&mpd_title,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
+            continue;
+        }
+        else if(case_startb(d+i,6,"album:")) {
+            if(!stralloc_catb(&mpd_album,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
+            continue;
+        }
+        else if(case_startb(d+i,7,"artist:")) {
+            if(!stralloc_catb(&mpd_artist,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
+            continue;
+        }
+    }
+
+    if (ok) {
+      i += 3;
+
+      lua_getglobal(vis->Lua,"song");
+
+      mpd_file.len ? lua_pushlstring(vis->Lua,mpd_file.s,mpd_file.len) : lua_pushnil(vis->Lua);
+      lua_setfield(vis->Lua,-2,"file");
+
+      mpd_title.len ? lua_pushlstring(vis->Lua,mpd_title.s,mpd_title.len) : lua_pushnil(vis->Lua);
+      lua_setfield(vis->Lua,-2,"title");
+
+      mpd_artist.len ? lua_pushlstring(vis->Lua,mpd_artist.s,mpd_artist.len) : lua_pushnil(vis->Lua);
+      lua_setfield(vis->Lua,-2,"artist");
+
+      mpd_album.len ? lua_pushlstring(vis->Lua,mpd_album.s,mpd_album.len) : lua_pushnil(vis->Lua);
+      lua_setfield(vis->Lua,-2,"album");
+
+      mpd_file.len = 0;
+      mpd_title.len = 0;
+      mpd_artist.len = 0;
+      mpd_album.len = 0;
+
+      lua_settop(vis->Lua,0);
+
+      vis->mpd_state = ringbuf_qget(vis->mpd_q);
+    }
+
+    if( (len - i) > 0) {
+      ringbuf_memcpy_into(vis->mpd_buf,d+i,len-i);
+    }
+}
+
+static inline void
+visualizer_mpd_message(visualizer *vis) {
+    char d[4097];
+    int len = 0;
+    int i = 0;
+    unsigned int j = 0;
+
+    int ok = 0;
+
+    stralloc message  = STRALLOC_ZERO;
+
+    len = ringbuf_bytes_used(vis->mpd_buf);
+    ringbuf_memcpy_from(d,vis->mpd_buf,len);
+    d[len] = 0;
 
     lua_getglobal(vis->Lua,"song");
-    lua_pushinteger(vis->Lua,mpd_status_get_song_id(vis->mpd_stat));
-    lua_setfield(vis->Lua,-2,"id");
 
-    lua_pushinteger(vis->Lua,vis->elapsed_ms / 1000);
-    lua_setfield(vis->Lua,-2,"elapsed");
+    for(i=0; i<len; i+= str_chr(d+i,'\n')+1) {
+        if(case_starts(d+i,"ok")) {
+            ok = 1;
+            break;
+        }
 
-    lua_pushinteger(vis->Lua,mpd_status_get_total_time(vis->mpd_stat));
-    lua_setfield(vis->Lua,-2,"total");
+        j = str_chr(d+i,':');
 
-    if(!mpd_send_current_song(vis->mpd_conn)) {
-        strerr_warn2x("Error sending currentsong: ",mpd_connection_get_error_message(vis->mpd_conn));
-        return;
-    }
-    vis->cur_song = mpd_recv_song(vis->mpd_conn);
-    if(!vis->cur_song) {
-        strerr_warn2x("Error receiving currentsong: ",mpd_connection_get_error_message(vis->mpd_conn));
-        return;
-    }
-    mpd_response_finish(vis->mpd_conn);
-
-    title = mpd_song_get_tag(vis->cur_song,MPD_TAG_TITLE,0);
-    album    = mpd_song_get_tag(vis->cur_song,MPD_TAG_ALBUM,0);
-    artist   = mpd_song_get_tag(vis->cur_song,MPD_TAG_ARTIST,0);
-    file     = mpd_song_get_uri(vis->cur_song);
-
-    if(title) {
-        lua_pushlstring(vis->Lua,title,strlen(title));
-    }
-    else {
-        lua_pushnil(vis->Lua);
-    }
-    lua_setfield(vis->Lua,-2,"title");
-
-    if(album) {
-        lua_pushlstring(vis->Lua,album,strlen(album));
-    }
-    else {
-        lua_pushnil(vis->Lua);
-    }
-    lua_setfield(vis->Lua,-2,"album");
-
-    if(artist) {
-        lua_pushlstring(vis->Lua,artist,strlen(artist));
-    }
-    else {
-        lua_pushnil(vis->Lua);
-    }
-    lua_setfield(vis->Lua,-2,"artist");
-
-    lua_pushlstring(vis->Lua,file,strlen(file));
-    lua_setfield(vis->Lua,-2,"file");
-
-    if(!mpd_send_read_messages(vis->mpd_conn)) {
-        strerr_warn2x("Error sending readmessages: ",mpd_connection_get_error_message(vis->mpd_conn));
-        return;
+        if(case_startb(d+i,8,"message:")) {
+            if(!stralloc_catb(&message,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
+            lua_pushlstring(vis->Lua,message.s,message.len);
+            lua_setfield(vis->Lua,-2,"message");
+            continue;
+        }
     }
 
-    vis->cur_msg = mpd_recv_message(vis->mpd_conn);
-    if(vis->cur_msg) {
-        message = mpd_message_get_text(vis->cur_msg);
-        lua_pushlstring(vis->Lua,message,strlen(message));
-    }
-    else {
-        lua_pushnil(vis->Lua);
-    }
-    lua_setfield(vis->Lua,-2,"message");
+    if (ok) {
+      i += 3;
 
-    mpd_response_finish(vis->mpd_conn);
+      stralloc_free(&message);
+
+      lua_settop(vis->Lua,0);
+
+      vis->mpd_state = ringbuf_qget(vis->mpd_q);
+    }
+
+    if( (len - i) > 0) {
+      ringbuf_memcpy_into(vis->mpd_buf,d+i,len-i);
+    }
+}
+
+static inline void
+visualizer_process_mpd(visualizer *vis, int fd) {
+    int bytes_read = 0;
+
+    if(vis->mpd_state <= VIS_MPD_READ_MESSAGE) {
+      bytes_read = ringbuf_read(fd,vis->mpd_buf,ringbuf_bytes_free(vis->mpd_buf));
+      if(bytes_read <= 0) {
+          strerr_warn1sys("Problem grabbing mpd data: ");
+          return;
+      }
+    }
+
+    switch(vis->mpd_state) {
+        case VIS_MPD_READ_IDLE: visualizer_mpd_idle(vis); break;
+        case VIS_MPD_READ_STATUS: visualizer_mpd_status(vis); break;
+        case VIS_MPD_READ_CURRENTSONG: visualizer_mpd_currentsong(vis); break;
+        case VIS_MPD_READ_MESSAGE: visualizer_mpd_message(vis); break;
+        case VIS_MPD_SEND_IDLE:        fd_send(fd,"idle player message\n",20,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
+        case VIS_MPD_SEND_STATUS:      fd_send(fd,"status\n",7,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
+        case VIS_MPD_SEND_CURRENTSONG: fd_send(fd,"currentsong\n",12,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
+        case VIS_MPD_SEND_MESSAGE:     fd_send(fd,"readmessages\n",13,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
+    }
+
+    return;
 }
 
 
@@ -397,8 +597,6 @@ visualizer_make_frames(visualizer *vis) {
 
             lua_settop(vis->Lua,0);
         }
-
-        visualizer_free_metadata(vis);
 
         lua_gc(vis->Lua,LUA_GCCOLLECT,0);
 
@@ -500,6 +698,16 @@ visualizer_init(visualizer *vis) {
         return visualizer_free(vis);
     }
 
+    vis->mpd_q = ringbuf_new(100);
+    if(!vis->mpd_q) {
+        return visualizer_free(vis);
+    }
+
+    vis->mpd_buf = ringbuf_new(4096);
+    if(!vis->mpd_buf) {
+        return visualizer_free(vis);
+    }
+
     vis->fds[0].fd = selfpipe_init();
     vis->fds[0].events = IOPAUSE_READ | IOPAUSE_EXCEPT;
 
@@ -535,6 +743,7 @@ visualizer_init(visualizer *vis) {
         mpd_run_subscribe(vis->mpd_conn,"visualizer");
         vis->fds[3].fd = mpd_connection_get_fd(vis->mpd_conn);
         vis->fds[3].events = IOPAUSE_READ | IOPAUSE_EXCEPT;
+        ndelay_on(vis->fds[3].fd);
     }
 
     vis->Lua = 0;
@@ -684,11 +893,24 @@ visualizer_init(visualizer *vis) {
     vis->delay = (1000 / (vis->framerate / 2)) * 1000000;
 
     if(vis->mpd_conn) {
-        visualizer_get_metadata(vis);
-
-        if(!mpd_send_idle_mask(vis->mpd_conn, MPD_IDLE_PLAYER | MPD_IDLE_MESSAGE)) {
-            strerr_die2x(1,"Error idling: ",mpd_connection_get_error_message(vis->mpd_conn));
-        }
+      ndelay_off(vis->fds[3].fd);
+      vis->mpd_state = VIS_MPD_SEND_STATUS;
+      ringbuf_append(vis->mpd_q,VIS_MPD_READ_STATUS);
+      ringbuf_append(vis->mpd_q,VIS_MPD_SEND_MESSAGE);
+      ringbuf_append(vis->mpd_q,VIS_MPD_READ_MESSAGE);
+      ringbuf_append(vis->mpd_q,VIS_MPD_SEND_CURRENTSONG);
+      ringbuf_append(vis->mpd_q,VIS_MPD_READ_CURRENTSONG);
+      ringbuf_append(vis->mpd_q,VIS_MPD_SEND_IDLE);
+      ringbuf_append(vis->mpd_q,VIS_MPD_READ_IDLE);
+      visualizer_process_mpd(vis,vis->fds[3].fd); /* status */
+      visualizer_process_mpd(vis,vis->fds[3].fd); /* status */
+      visualizer_process_mpd(vis,vis->fds[3].fd); /* message */
+      visualizer_process_mpd(vis,vis->fds[3].fd); /* message */
+      visualizer_process_mpd(vis,vis->fds[3].fd); /* currentsong */
+      visualizer_process_mpd(vis,vis->fds[3].fd); /* currentsong */
+      visualizer_process_mpd(vis,vis->fds[3].fd); /* send idle */
+      /* read idle handled in event loop */
+      ndelay_on(vis->fds[3].fd);
     }
 
     return 1;
@@ -729,6 +951,17 @@ visualizer_loop(visualizer *vis) {
         else {
             vis->fds[2].events = IOPAUSE_EXCEPT | IOPAUSE_WRITE;
         }
+    }
+
+    switch(vis->mpd_state) {
+        case VIS_MPD_READ_IDLE:
+        case VIS_MPD_READ_STATUS:
+        case VIS_MPD_READ_CURRENTSONG:
+        case VIS_MPD_READ_MESSAGE: vis->fds[3].events = IOPAUSE_READ; break;
+        case VIS_MPD_SEND_IDLE:
+        case VIS_MPD_SEND_STATUS:
+        case VIS_MPD_SEND_CURRENTSONG:
+        case VIS_MPD_SEND_MESSAGE: vis->fds[3].events = IOPAUSE_WRITE; break;
     }
 
     events = iopause_stamp(vis->fds,4,NULL,NULL);
@@ -795,11 +1028,8 @@ visualizer_loop(visualizer *vis) {
         vis->fds[2].fd = -1;
     }
 
-    if(events && vis->fds[3].revents & IOPAUSE_READ) {
-        mpd_recv_idle(vis->mpd_conn,0);
-        mpd_response_finish(vis->mpd_conn);
-        visualizer_get_metadata(vis);
-        mpd_send_idle_mask(vis->mpd_conn, MPD_IDLE_PLAYER | MPD_IDLE_MESSAGE);
+    if(events && vis->fds[3].revents) {
+        visualizer_process_mpd(vis,vis->fds[3].fd);
     }
     }
 

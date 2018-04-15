@@ -256,4 +256,10 @@ ringbuf_write(int fd, ringbuf_t rb, size_t count);
 void *
 ringbuf_copy(ringbuf_t dst, ringbuf_t src, size_t count);
 
+ssize_t
+ringbuf_append(ringbuf_t dst, char byte);
+
+char
+ringbuf_qget(ringbuf_t dst);
+
 #endif /* INCLUDED_RINGBUF_H */

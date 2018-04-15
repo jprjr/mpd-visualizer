@@ -100,6 +100,26 @@ ringbuf_memset(ringbuf_t dst, int c, size_t len)
     return nwritten;
 }
 
+char ringbuf_qget(ringbuf_t dst)
+{
+    char res[1] = { 0 };
+    if (ringbuf_bytes_used(dst) > 0) {
+        ringbuf_memcpy_from(&res,dst,1);
+        return res[0];
+    }
+    return 0;
+}
+
+ssize_t
+ringbuf_append(ringbuf_t dst, char byte)
+{
+    if(ringbuf_bytes_free(dst) > 0) {
+        ringbuf_memcpy_into(dst,&byte,1);
+        return 1;
+    }
+    return 0;
+}
+
 void *
 ringbuf_memcpy_into(ringbuf_t dst, const void *src, size_t count)
 {

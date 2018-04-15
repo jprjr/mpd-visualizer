@@ -6,6 +6,7 @@
 #include "image.h"
 #include "video.h"
 #include "thread.h"
+#include "ringbuf.h"
 #include <skalibs/skalibs.h>
 #include <mpd/client.h>
 #include <lua.h>
@@ -31,9 +32,6 @@ typedef struct visualizer {
     const char *input_fifo;
     const char *output_fifo;
     struct mpd_connection *mpd_conn;
-    struct mpd_status *mpd_stat;
-    struct mpd_song *cur_song;
-    struct mpd_message *cur_msg;
     genalloc lua_funcs;
     lua_State *Lua;
     thread_queue_t image_queue;
@@ -49,7 +47,19 @@ typedef struct visualizer {
     char const *const *argv;
     int argc;
     int totaltime;
+    ringbuf_t mpd_buf;
+    ringbuf_t mpd_q;
+    unsigned int mpd_state;
 } visualizer;
+
+#define VIS_MPD_READ_IDLE 0
+#define VIS_MPD_READ_STATUS 1
+#define VIS_MPD_READ_CURRENTSONG 2
+#define VIS_MPD_READ_MESSAGE 3
+#define VIS_MPD_SEND_IDLE 4
+#define VIS_MPD_SEND_STATUS 5
+#define VIS_MPD_SEND_CURRENTSONG 6
+#define VIS_MPD_SEND_MESSAGE 7
 
 #define VISUALIZER_ZERO { \
   .argv = NULL, \
@@ -59,13 +69,6 @@ typedef struct visualizer {
   .lua_folder = NULL, \
   .output_fifo = NULL, \
   .mpd_conn = NULL, \
-  .mpd_stat = NULL, \
-  .cur_song = NULL, \
-  .cur_msg = NULL, \
-  .title = NULL, \
-  .artist = NULL, \
-  .album = NULL, \
-  .filename = NULL, \
   .lua_funcs = GENALLOC_ZERO, \
   .Lua = NULL, \
   .lua_image_cb = NULL, \
@@ -90,6 +93,9 @@ typedef struct visualizer {
   .elapsed_ms = 0, \
   .delay = 0, \
   .delay_active = 0, \
+  .mpd_buf = NULL, \
+  .mpd_q = NULL, \
+  .mpd_state = VIS_MPD_READ_IDLE, \
 }
 
 #ifdef __cplusplus
