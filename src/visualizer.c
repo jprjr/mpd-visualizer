@@ -253,13 +253,19 @@ visualizer_mpd_idle(visualizer *vis) {
     char d[4097];
     int len = 0;
     int i = 0;
+    int k = 0;
     unsigned int j = 0;
     int ok = 0;
     len = ringbuf_bytes_used(vis->mpd_buf);
     ringbuf_memcpy_from(d,vis->mpd_buf,len);
     d[len] = 0;
 
-    for(i=0; i<len; i+= str_chr(d+i,'\n')+1) {
+    while(i<len && d[i] != 0) {
+        k = str_chr(d+i,'\n');
+
+        /* check that we have a full line */
+        if(!d[i+k]) break;
+
         if(case_starts(d+i,"ok")) {
             ok = 1;
             break;
@@ -267,22 +273,17 @@ visualizer_mpd_idle(visualizer *vis) {
 
         j = str_chr(d+i,':') + 2;
 
-        while(d[i+j] != '\n') {
-          if(case_starts(d+i+j,"message")) {
-              ringbuf_append(vis->mpd_q,VIS_MPD_SEND_MESSAGE);
-              ringbuf_append(vis->mpd_q,VIS_MPD_READ_MESSAGE);
-              j += 7;
-              continue;
-          }
-          if(case_starts(d+i+j,"player")) {
-              j+= 6;
-              ringbuf_append(vis->mpd_q,VIS_MPD_SEND_STATUS);
-              ringbuf_append(vis->mpd_q,VIS_MPD_READ_STATUS);
-              ringbuf_append(vis->mpd_q,VIS_MPD_SEND_CURRENTSONG);
-              ringbuf_append(vis->mpd_q,VIS_MPD_READ_CURRENTSONG);
-              continue;
-          }
+        if(case_starts(d+i+j,"message")) {
+            ringbuf_append(vis->mpd_q,VIS_MPD_SEND_MESSAGE);
+            ringbuf_append(vis->mpd_q,VIS_MPD_READ_MESSAGE);
         }
+        if(case_starts(d+i+j,"player")) {
+            ringbuf_append(vis->mpd_q,VIS_MPD_SEND_STATUS);
+            ringbuf_append(vis->mpd_q,VIS_MPD_READ_STATUS);
+            ringbuf_append(vis->mpd_q,VIS_MPD_SEND_CURRENTSONG);
+            ringbuf_append(vis->mpd_q,VIS_MPD_READ_CURRENTSONG);
+        }
+        i += k + 1;
     }
 
     if (ok) {
@@ -303,6 +304,7 @@ visualizer_mpd_status(visualizer *vis) {
     int len = 0;
     int i = 0;
     unsigned int j = 0;
+    unsigned int k = 0;
     unsigned int t = 0;
 
     int ok = 0;
@@ -311,32 +313,32 @@ visualizer_mpd_status(visualizer *vis) {
     ringbuf_memcpy_from(d,vis->mpd_buf,len);
     d[len] = 0;
 
+    while(i<len && d[i] != 0) {
+        k = str_chr(d+i,'\n');
 
-    for(i=0; i<len; i+= str_chr(d+i,'\n')+1) {
+        if(!d[i+k]) break;
+
         if(case_starts(d+i,"ok")) {
             ok = 1;
             break;
         }
 
-        j = str_chr(d+i,':');
+        j = str_chr(d+i,':') + 2;
 
         if(case_startb(d+i,7,"songid:")) {
-            if(!stralloc_catb(&mpd_songid,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
-            continue;
+            if(!stralloc_catb(&mpd_songid,d+i+j,str_chr(d+i+j,'\n'))) return;
         }
         else if(case_startb(d+i,8,"elapsed:")) {
-            if(!stralloc_catb(&mpd_elapsed,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
-            continue;
+            if(!stralloc_catb(&mpd_elapsed,d+i+j,str_chr(d+i+j,'\n'))) return;
         }
 
         else if(case_startb(d+i,9,"duration:")) {
-            if(!stralloc_catb(&mpd_duration,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
-            continue;
+            if(!stralloc_catb(&mpd_duration,d+i+j,str_chr(d+i+j,'\n'))) return;
         }
         else if(case_startb(d+i,5,"time:")) {
-            if(!stralloc_catb(&mpd_time,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
-            continue;
+            if(!stralloc_catb(&mpd_time,d+i+j,str_chr(d+i+j,'\n'))) return;
         }
+        i += k + 1;
 
     }
 
@@ -410,6 +412,7 @@ visualizer_mpd_currentsong(visualizer *vis) {
     int len = 0;
     int i = 0;
     unsigned int j = 0;
+    unsigned int k = 0;
 
     int ok = 0;
 
@@ -417,30 +420,31 @@ visualizer_mpd_currentsong(visualizer *vis) {
     ringbuf_memcpy_from(d,vis->mpd_buf,len);
     d[len] = 0;
 
-    for(i=0; i<len; i+= str_chr(d+i,'\n')+1) {
+    while(i<len && d[i] != 0) {
+        k = str_chr(d+i,'\n');
+
+        if(!d[i+k]) break;
+
         if(case_starts(d+i,"ok")) {
             ok = 1;
             break;
         }
 
-        j = str_chr(d+i,':');
+        j = str_chr(d+i,':') + 2;
 
         if(case_startb(d+i,5,"file:")) {
-            if(!stralloc_catb(&mpd_file,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
-            continue;
+            if(!stralloc_catb(&mpd_file,d+i+j,str_chr(d+i+j,'\n'))) return;
         }
         else if(case_startb(d+i,6,"title:")) {
-            if(!stralloc_catb(&mpd_title,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
-            continue;
+            if(!stralloc_catb(&mpd_title,d+i+j,str_chr(d+i+j,'\n'))) return;
         }
         else if(case_startb(d+i,6,"album:")) {
-            if(!stralloc_catb(&mpd_album,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
-            continue;
+            if(!stralloc_catb(&mpd_album,d+i+j,str_chr(d+i+j,'\n'))) return;
         }
         else if(case_startb(d+i,7,"artist:")) {
-            if(!stralloc_catb(&mpd_artist,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
-            continue;
+            if(!stralloc_catb(&mpd_artist,d+i+j,str_chr(d+i+j,'\n'))) return;
         }
+        i += k + 1;
     }
 
     if (ok) {
