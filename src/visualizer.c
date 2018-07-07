@@ -532,10 +532,12 @@ visualizer_process_mpd(visualizer *vis, int fd) {
     int bytes_read = 0;
 
     if(vis->mpd_state <= VIS_MPD_READ_MESSAGE) {
-      bytes_read = ringbuf_read(fd,vis->mpd_buf,ringbuf_bytes_free(vis->mpd_buf));
-      if(bytes_read <= 0) {
-          strerr_warn1sys("Problem grabbing mpd data: ");
-          return;
+      if(ringbuf_bytes_free(vis->mpd_buf) > 0) {
+          bytes_read = ringbuf_read(fd,vis->mpd_buf,ringbuf_bytes_free(vis->mpd_buf));
+          if(bytes_read <= 0) {
+              strerr_warn1sys("Problem grabbing mpd data: ");
+              return;
+          }
       }
     }
 
