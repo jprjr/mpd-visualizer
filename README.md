@@ -185,8 +185,10 @@ When it receives a `USR1` signal, it will reload all `Lua` scripts.
 
 # The Lua environment
 
-
 ## Globals
+
+Before any script is called, your Lua folder is added to the `package.path` variable,
+meaning you can create submodules within your Lua folder and load them using `require`.
 
 Within your Lua script, you have a few pre-defined global variables:
 

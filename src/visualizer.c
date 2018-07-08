@@ -684,6 +684,7 @@ visualizer_init(visualizer *vis) {
     char *mpd_host_default = "127.0.0.1";
     char mpd_tmp[1] = { 0 } ;
     int mpd_i = 0;
+    stralloc realpath_lua = STRALLOC_ZERO;
 
     sparams.sched_priority = sched_get_priority_max(SCHED_FIFO);
     pthread_setschedparam(this_thread,SCHED_FIFO,&sparams);
@@ -924,7 +925,28 @@ visualizer_init(visualizer *vis) {
         strerr_die2x(1,"Error calling stream.lua: ",lua_tostring(vis->Lua,-1));
     }
 
-    if(vis->lua_folder) visualizer_load_scripts(vis);
+    if(vis->lua_folder) {
+        if(!stralloc_cats(&realpath_lua,"package.path = '")) {
+            visualizer_free(vis);
+            return -1;
+        }
+        if(sarealpath(&realpath_lua,vis->lua_folder) != -1) {
+            if(!stralloc_cats(&realpath_lua,"/?.lua;' .. package.path")) {
+                visualizer_free(vis);
+                return -1;
+            }
+            if(!stralloc_0(&realpath_lua)) {
+                visualizer_free(vis);
+                return -1;
+            }
+            if(luaL_dostring(vis->Lua,realpath_lua.s) != 0) {
+                visualizer_free(vis);
+                return -1;
+            }
+        }
+        visualizer_load_scripts(vis);
+    }
+    stralloc_free(&realpath_lua);
 
     luaimage_setup_threads(&(vis->image_queue));
 
