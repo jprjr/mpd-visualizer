@@ -29,6 +29,17 @@ static void luaL_setfuncs (lua_State *L, const luaL_Reg *l, int nup) {
 #endif
 
 static int
+lua_file_exists(lua_State *L) {
+    const char *filename = luaL_checkstring(L,1);
+
+    if(access(filename,F_OK) != -1) {
+        lua_pushboolean(L,1);
+        return 1;
+    }
+    return 0;
+}
+
+static int
 lua_file_basename(lua_State *L) {
     stralloc sa = STRALLOC_ZERO;
     const char *folder = luaL_checkstring(L,1);
@@ -96,11 +107,12 @@ lua_file_list(lua_State *L) {
 
 
 static const struct luaL_Reg lua_file_methods[] = {
-    { "ls"       , lua_file_list },
-    { "dirname"  , lua_file_dirname },
+    { "ls"       , lua_file_list     },
+    { "exists"   , lua_file_exists   },
+    { "dirname"  , lua_file_dirname  },
     { "basename" , lua_file_basename },
-    { "getcwd"   , lua_file_getcwd },
-    { NULL     , NULL                },
+    { "getcwd"   , lua_file_getcwd   },
+    { NULL       , NULL              },
 };
 
 int luaopen_file(lua_State *L) {

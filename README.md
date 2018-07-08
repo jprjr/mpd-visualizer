@@ -255,8 +255,11 @@ The `file` object has methods for common file operations:
 * `basename = file.basename(path)`
   * Equivalent to the [basename call](http://pubs.opengroup.org/onlinepubs/009696799/functions/basename.html)
 
-* `getcwd = file.getcwd()`
+* `cwd = file.getcwd()`
   * Equivalent to the [getcwd call](http://pubs.opengroup.org/onlinepubs/009695399/functions/getcwd.html)
+
+* `ok = file.exists(path)`
+  * Returns `true` if a path exists, `nil` otherwise.
 
 ### The global `song` object
 
