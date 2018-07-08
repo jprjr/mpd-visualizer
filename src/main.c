@@ -121,7 +121,11 @@ int main(int argc, char const *const *argv) {
     vis->argc = argc;
     vis->argv = argv;
 
-    if(!visualizer_init(vis)) dieusage();
+    switch(visualizer_init(vis)) {
+        case -1: exit(1);
+        case 0: dieusage();
+    }
+
     visualizer_loop(vis);
     visualizer_cleanup(vis);
 

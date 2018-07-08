@@ -8,14 +8,11 @@ CFLAGS_OPTIMIZE = -pedantic -g0 -O3 -fPIC -march=native
 LUA=luajit
 
 CFLAGS = $(shell $(PKGCONFIG) --cflags fftw3)
-CFLAGS += $(shell $(PKGCONFIG) --cflags libmpdclient)
 CFLAGS += $(shell $(PKGCONFIG) --cflags $(LUA))
 CFLAGS += -Wall -Wextra $(CFLAGS_OPTIMIZE)
 CFLAGS += -D_GNU_SOURCE
 
 LDFLAGS = -lskarnet -lm
-LDFLAGS += -Wl,-rpath,$(shell $(PKGCONFIG) --variable=libdir libmpdclient)
 LDFLAGS += $(shell $(PKGCONFIG) --libs fftw3)
-LDFLAGS += $(shell $(PKGCONFIG) --libs libmpdclient)
 LDFLAGS += $(shell $(PKGCONFIG) --libs $(LUA))
 

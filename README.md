@@ -120,7 +120,6 @@ ffmpeg -i pipe:0 -c:v libx264 -c:a aac -strict -2 -y some-file.mp4
 * LuaJIT or Lua 5.3.
   * This may work with Lua 5.1 or Lua 5.2, so long as you have either Lua BitOp or Bit32, untested
 * [FFTW](http://www.fftw.org/)
-* [libmpdclient](https://www.musicpd.org/libs/libmpdclient/)
 * [skalibs](http://skarnet.org/software/skalibs/)
 
 ## Installation

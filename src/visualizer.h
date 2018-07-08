@@ -8,7 +8,6 @@
 #include "thread.h"
 #include "ringbuf.h"
 #include <skalibs/skalibs.h>
-#include <mpd/client.h>
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
@@ -31,7 +30,6 @@ typedef struct visualizer {
     const char *lua_folder;
     const char *input_fifo;
     const char *output_fifo;
-    struct mpd_connection *mpd_conn;
     genalloc lua_funcs;
     lua_State *Lua;
     thread_queue_t image_queue;
@@ -68,7 +66,6 @@ typedef struct visualizer {
   .processor = AUDIO_PROCESSOR_ZERO, \
   .lua_folder = NULL, \
   .output_fifo = NULL, \
-  .mpd_conn = NULL, \
   .lua_funcs = GENALLOC_ZERO, \
   .Lua = NULL, \
   .lua_image_cb = NULL, \
