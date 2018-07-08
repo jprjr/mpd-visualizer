@@ -40,6 +40,17 @@ lua_file_exists(lua_State *L) {
 }
 
 static int
+lua_file_realpath(lua_State *L) {
+    stralloc sa = STRALLOC_ZERO;
+    const char *path = luaL_checkstring(L,1);
+    sarealpath(&sa,path);
+
+    lua_pushlstring(L,sa.s,sa.len);
+    stralloc_free(&sa);
+    return 1;
+}
+
+static int
 lua_file_basename(lua_State *L) {
     stralloc sa = STRALLOC_ZERO;
     const char *folder = luaL_checkstring(L,1);
@@ -111,6 +122,7 @@ static const struct luaL_Reg lua_file_methods[] = {
     { "exists"   , lua_file_exists   },
     { "dirname"  , lua_file_dirname  },
     { "basename" , lua_file_basename },
+    { "realpath" , lua_file_realpath },
     { "getcwd"   , lua_file_getcwd   },
     { NULL       , NULL              },
 };

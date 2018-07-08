@@ -257,6 +257,9 @@ The `file` object has methods for common file operations:
 * `basename = file.basename(path)`
   * Equivalent to the [basename call](http://pubs.opengroup.org/onlinepubs/009696799/functions/basename.html)
 
+* `realpath = file.realpath(path)`
+  * Equivalent to the [realpath call](http://pubs.opengroup.org/onlinepubs/009696799/functions/realpath.html)
+
 * `cwd = file.getcwd()`
   * Equivalent to the [getcwd call](http://pubs.opengroup.org/onlinepubs/009695399/functions/getcwd.html)
 
