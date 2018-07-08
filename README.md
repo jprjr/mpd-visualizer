@@ -193,7 +193,7 @@ Within your Lua script, you have a few pre-defined global variables:
 * `stream` - a table representing the video stream
 * `image` - a module for loading image files
 * `font` - a module for loading BDF fonts
-* `file` - a module for listing files
+* `file` - a module for filesystem operations
 * `song` - a table of what's playing, from MPD.
 
 
@@ -241,13 +241,22 @@ Scroll down to "Font Instances" for details on font methods
 
 ### The global `file` object
 
-The `file` object has a simple method for listing files in a directory:
+The `file` object has methods for common file operations:
 
-* `dir = font.ls(path)`
+* `dir = file.ls(path)`
   * Lists files in a directory
   * Returns an array of file objects with two keys:
     * `file` - the actual file path
     * `mtime` - file modification time
+
+* `dirname = file.dirname(path)`
+  * Equivalent to the [dirname call](http://pubs.opengroup.org/onlinepubs/009696799/functions/dirname.html)
+
+* `basename = file.basename(path)`
+  * Equivalent to the [basename call](http://pubs.opengroup.org/onlinepubs/009696799/functions/basename.html)
+
+* `getcwd = file.getcwd()`
+  * Equivalent to the [getcwd call](http://pubs.opengroup.org/onlinepubs/009695399/functions/getcwd.html)
 
 ### The global `song` object
 

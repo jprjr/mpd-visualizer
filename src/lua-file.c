@@ -4,6 +4,8 @@
 #include <lua.h>
 #include <lauxlib.h>
 #include <skalibs/skalibs.h>
+#include <skalibs/stralloc.h>
+#include <skalibs/djbunix.h>
 #include <string.h>
 
 #ifdef __cplusplus
@@ -25,6 +27,37 @@ static void luaL_setfuncs (lua_State *L, const luaL_Reg *l, int nup) {
   lua_pop(L, nup);  /* remove upvalues */
 }
 #endif
+
+static int
+lua_file_basename(lua_State *L) {
+    stralloc sa = STRALLOC_ZERO;
+    const char *folder = luaL_checkstring(L,1);
+    sabasename(&sa,folder,strlen(folder));
+
+    lua_pushlstring(L,sa.s,sa.len);
+    stralloc_free(&sa);
+    return 1;
+}
+
+static int
+lua_file_dirname(lua_State *L) {
+    stralloc sa = STRALLOC_ZERO;
+    const char *folder = luaL_checkstring(L,1);
+    sadirname(&sa,folder,strlen(folder));
+
+    lua_pushlstring(L,sa.s,sa.len);
+    stralloc_free(&sa);
+    return 1;
+}
+
+static int
+lua_file_getcwd(lua_State *L) {
+    stralloc sa = STRALLOC_ZERO;
+    sagetcwd(&sa);
+    lua_pushlstring(L,sa.s,sa.len);
+    stralloc_free(&sa);
+    return 1;
+}
 
 static int
 lua_file_list(lua_State *L) {
@@ -64,6 +97,9 @@ lua_file_list(lua_State *L) {
 
 static const struct luaL_Reg lua_file_methods[] = {
     { "ls"       , lua_file_list },
+    { "dirname"  , lua_file_dirname },
+    { "basename" , lua_file_basename },
+    { "getcwd"   , lua_file_getcwd },
     { NULL     , NULL                },
 };
 
