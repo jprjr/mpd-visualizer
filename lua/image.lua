@@ -66,6 +66,7 @@ local function hsl_to_rgb(h,s,l)
   return ceil((r1 + m) * 255), ceil((g1 + m) * 255), ceil((b1 + m) * 255)
 end
 
+image.hsl_to_rgb = hsl_to_rgb
 
 image_mt_funcs.set_pixel_hsl = function(self,x,y,h,s,l,a)
   local r, g, b = hsl_to_rgb(h,s,l)
