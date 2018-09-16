@@ -112,13 +112,18 @@ image_mt_funcs.stamp_letter = function(self,font,codepoint,scale,x,y,r,g,b,hloff
   return font.widths[codepoint] * scale
 end
 
-image_mt_funcs.stamp_string = function(self,font,str,scale,x,y,r,g,b,max,lmask,rmask)
+image_mt_funcs.stamp_string = function(self,font,str,scale,x,y,r,g,b,max,lmask,rmask,tmask,bmask)
   local lmask_applied = false
   if not lmask then
     lmask_applied = true
   end
 
   rmask = rmask or 0
+  tmask = tmask or 0
+  bmask = bmask or 0
+
+  tmask = tmask * scale
+  bmask = bmask * scale
 
   local codepoints = font.utf8_to_table(str)
   local xi = x
@@ -135,7 +140,7 @@ image_mt_funcs.stamp_string = function(self,font,str,scale,x,y,r,g,b,max,lmask,r
       end
       xi = xi + self:stamp_letter(font,codepoint,scale,xi,y,r,g,b,
         lmask_applied == false and lmask or 0,
-        rmask)
+        rmask,tmask,bmask)
       if lmask_applied == false then
         lmask_applied = true
       end
@@ -143,9 +148,9 @@ image_mt_funcs.stamp_string = function(self,font,str,scale,x,y,r,g,b,max,lmask,r
   end
 end
 
-image_mt_funcs.stamp_string_hsl = function(self,font,str,scale,x,y,h,s,l,max,lmask,rmask)
+image_mt_funcs.stamp_string_hsl = function(self,font,str,scale,x,y,h,s,l,max,lmask,rmask,tmask,bmask)
   local r, g, b = hsl_to_rgb(h,s,l)
-  return self:stamp_string(font,str,scale,x,y,r,g,b,max,lmask,rmask)
+  return self:stamp_string(font,str,scale,x,y,r,g,b,max,lmask,rmask,tmask,bmask)
 end
 
 image_mt_funcs.stamp_letter_hsl = function(self,font,codepoint,scale,x,y,h,s,l,hloffset,hroffset,ytoffset,yboffset)

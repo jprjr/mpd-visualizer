@@ -10,16 +10,16 @@ stream.draw_rectangle_hsl = function(self,x1,y1,x2,y2,h,s,l,a)
   return self.video:draw_rectangle_hsl(x1,y1,x2,y2,h,s,l,a)
 end
 
-stream.stamp_string = function(self,font,str,scale,x,y,r,g,b,max,lmask,rmask)
-  return self.video:stamp_string(font,str,scale,x,y,r,g,b,max,lmask,rmask)
+stream.stamp_string = function(self,font,str,scale,x,y,r,g,b,max,lmask,rmask,tmask,bmask)
+  return self.video:stamp_string(font,str,scale,x,y,r,g,b,max,lmask,rmask,tmask,bmask)
 end
 
 stream.stamp_letter = function(self,font,codepoint,scale,x,y,r,g,b,hloffset,hroffset,ytoffset,yboffset)
   return self.video:stamp_letter(font,codepoint,scale,x,y,r,g,b,hloffset,hroffset,ytoffset,yboffset)
 end
 
-stream.stamp_string_hsl = function(self,font,str,scale,x,y,h,s,l,max,lmask,rmask)
-  return self.video:stamp_string_hsl(font,str,scale,x,y,h,s,l,max,lmask,rmask)
+stream.stamp_string_hsl = function(self,font,str,scale,x,y,h,s,l,max,lmask,rmask,tmask,bmask)
+  return self.video:stamp_string_hsl(font,str,scale,x,y,h,s,l,max,lmask,rmask,tmask,bmask)
 end
 
 stream.stamp_letter_hsl = function(self,font,codepoint,scale,x,y,h,s,l,hloffset,hroffset,ytoffset,yboffset)
