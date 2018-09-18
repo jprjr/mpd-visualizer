@@ -113,6 +113,58 @@ image_mt_funcs.stamp_letter = function(self,font,codepoint,scale,x,y,r,g,b,hloff
   return font.widths[codepoint] * scale
 end
 
+local string_props = {
+  'font',
+  'scale',
+  'x',
+  'y',
+  'r',
+  'g',
+  'b',
+  'max',
+  'lmask',
+  'rmask',
+  'tmask',
+  'bmask',
+}
+
+image_mt_funcs.stamp_string_adv = function(self, str, props)
+  local p
+  local tp = type(props)
+
+  local codepoints = font.utf8_to_table(str)
+  for i,codepoint in ipairs(codepoints) do
+    local ap
+    if tp == 'table' then
+      ap = props[i]
+    elseif tp == 'function' then
+      ap = props(i,p)
+    else
+      return false, nil
+    end
+    if not p then
+      if not ap then
+        return false, nil
+      end
+      p = {}
+    end
+
+    if ap then
+      for _,k in ipairs(string_props) do
+        if ap[k] then
+          p[k] = ap[k]
+        end
+      end
+    end
+
+    if not p.font.widths[codepoint] then
+      codepoint = 32
+    end
+    p.x = p.x + self:stamp_letter(p.font,codepoint,p.scale,p.x,p.y,p.r,p.g,p.b,p.lmask,p.rmask,p.tmask,p.bmask)
+  end
+
+end
+
 image_mt_funcs.stamp_string = function(self,font,str,scale,x,y,r,g,b,max,lmask,rmask,tmask,bmask)
   local lmask_applied = false
   if not lmask then

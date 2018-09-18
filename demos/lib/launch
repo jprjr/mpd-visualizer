@@ -1,0 +1,26 @@
+#!/bin/sh
+
+luadir="demos/lua/$(basename $0)"
+luadir="${luadir%-gif}"
+
+launch_vis() {
+  src="$1"
+  shift
+  $src | ./mpd-visualizer \
+    -w 1280 \
+    -h 720 \
+    -f 30 \
+    -r 48000 \
+    -c 2 \
+    -s 2 \
+    -b 20 \
+    -i - \
+    -o - \
+    -l $luadir \
+    -m 0 \
+    -t "Rainbow Demo" \
+    -a "John Regan" \
+    -A "MPD-Visualizer Demos" \
+    -F "/dev/zero" \
+    -- "$@"
+}

@@ -354,6 +354,11 @@ For convenience, most `frame` functions can be used on the `stream` object direc
   * `rmask` - mask the string by this many pixels on the right (before scaling)
 * `frame:stamp_string_hsl(font,str,scale,x,y,h,s,l,max,lmask,rmask)`
   * same as `stamp_string`, but with hue, saturation, and lightness values instead of red, green, and blue
+* `frame:stamp_string_adv(str,props)`
+  * renders `str` on top of the `frame`
+  * `props` can be a table of per-frame properties, or a function
+  * in the case of a table, you need frame 1 defined at a minimum
+  * in the case of a function, the function will receive two arguments - the index, and the current properties (may be nil)
 * `frame:stamp_letter(font,codepoint,scale,x,y,r,g,b,lmask,rmask,tmask,bmask)`
   * renders an individual letter
   * the letter is a UTF-8 codepoint, NOT a character. Ie, 'A' is 65
@@ -500,6 +505,62 @@ return {
     end
 }
 ```
+
+### example: use `stamp_string_adv` with a function to generate a rainbow
+
+```lua
+local vga
+
+local colorcounter = 0
+local colorprops = {}
+
+local function cycle_color(i, props)
+  if i == 1 then
+    -- at the beginning of the string, increase our color counter
+    colorcounter = colorcounter + 1
+    props = {
+      x = 1,
+    }
+  end
+  if colorcounter == 36 then
+    -- one cycle is 30 degrees
+    -- we move 10 degrees per frame, so 36 frames for a full cycle
+    colorcounter = 0
+  end
+  
+  -- use the color counter offset + i to change per-letter colors
+  local r, g, b = image.hsl_to_rgb((colorcounter + (i-1) ) * 10, 50, 50)
+
+  -- also for fun, we make each letter drop down
+  return {
+    x = props.x,
+    y = 50 + i * (vga.height/2),
+    font = vga,
+    scale = 3,
+    r = r,
+    g = g,
+    b = b,
+  }
+end
+
+local function onload()
+  vga = font.load('demos/fonts/7x14.bdf')
+end
+
+local function onframe()
+  stream:stamp_string(vga, "Just some text", 3, 1, 1, 255, 255, 255)
+  stream:stamp_string_adv("Some more text", cycle_color )
+end
+
+return {
+  onload = onload,
+  onframe = onframe,
+}
+```
+
+Output:
+
+![output of rainbow demo](gifs/rainbow-string.gif)
 
 ## License
 
