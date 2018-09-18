@@ -1123,7 +1123,7 @@ visualizer_loop(visualizer *vis) {
     }
 
     if(events && vis->fds[1].revents & IOPAUSE_EXCEPT) {
-        strerr_warn1x("exception/error on input pipe/fifo, exiting");
+        strerr_warn1sys("exception/error on input pipe/fifo: ");
         return -1;
     }
 
