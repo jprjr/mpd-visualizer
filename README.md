@@ -350,8 +350,8 @@ For convenience, most `frame` functions can be used on the `stream` object direc
   * `x,y` starts at `1,1` for the top-left corner of the image
   * `r, g, b` represents the red, green, and blue values, 0 - 255
   * `max` is the maximum pixel (width) to render the string at. If the would have gone past this pixel, it is truncated
-  * `lmask` - mask the string by this many pixels on the left (before scaling)
-  * `rmask` - mask the string by this many pixels on the right (before scaling)
+  * `lmask` - mask the string by this many pixels on the left  (after scaling)
+  * `rmask` - mask the string by this many pixels on the right (after scaling)
 * `frame:stamp_string_hsl(font,str,scale,x,y,h,s,l,max,lmask,rmask)`
   * same as `stamp_string`, but with hue, saturation, and lightness values instead of red, green, and blue
 * `frame:stamp_string_adv(str,props)`
@@ -362,10 +362,10 @@ For convenience, most `frame` functions can be used on the `stream` object direc
 * `frame:stamp_letter(font,codepoint,scale,x,y,r,g,b,lmask,rmask,tmask,bmask)`
   * renders an individual letter
   * the letter is a UTF-8 codepoint, NOT a character. Ie, 'A' is 65
-  * lmask specifies pixels to mask on the left (before scaling)
-  * rmask specifies pixels to mask on the right (before scaling)
-  * tmask specifies pixels to mask on the top (before scaling)
-  * bmask specifies pixels to mask on the bottom (before scaling)
+  * lmask specifies pixels to mask on the left   (after scaling)
+  * rmask specifies pixels to mask on the right  (after scaling)
+  * tmask specifies pixels to mask on the top    (after scaling)
+  * bmask specifies pixels to mask on the bottom (after scaling)
 * `frame:stamp_letter(font,codepoint,scale,x,y,h,s,l,lmask,rmask,tmask,bmask)`
   * same as `stamp_letter`, but with hue, saturation, and lightness values instead of red, green, blue
 
