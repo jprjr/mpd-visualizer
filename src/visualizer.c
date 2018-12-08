@@ -250,6 +250,117 @@ visualizer_grab_audio(visualizer *vis, int fd) {
     return vis->processor.samples_available;
 }
 
+static int
+visualizer_connect_mpd(visualizer *vis) {
+    ip46_t ip = IP46_ZERO;
+    int r = 0;
+
+    if(!vis->mpd) {
+        return 1;
+    }
+
+    if(vis->fds[3].fd > -1) {
+        fd_close(vis->fds[3].fd);
+        vis->fds[3].fd = -1;
+    }
+
+    if(vis->mpd_host[0] == '/') {
+        vis->fds[3].fd = ipc_stream_nb();
+        if(vis->fds[3].fd == -1) {
+            strerr_warn1sys("Unable to open socket: ");
+            return -1;
+        }
+
+        r = ipc_connect(vis->fds[3].fd,vis->mpd_host);
+        if(r == -1 && errno != EINPROGRESS) {
+            strerr_warn1sys("Unable to connect to socket: ");
+            return -1;
+        }
+    } else if(ip46_scan(vis->mpd_host,&ip)) {
+        vis->fds[3].fd = ip.is6 ? socket_tcp6_nb() : socket_tcp4_nb();
+        if(vis->fds[3].fd == -1) {
+            strerr_warn1sys("Unable to open socket: ");
+            return -1;
+        }
+
+        r = socket_connect46(vis->fds[3].fd,&ip,vis->mpd_port);
+        if(r == -1 && errno != EINPROGRESS) {
+            strerr_warn1sys("Unable to connect to ip: ");
+            return -1;
+        }
+    } else {
+        /* todo: hostname lookup */
+    }
+
+    vis->fds[3].events = IOPAUSE_READ | IOPAUSE_EXCEPT;
+    vis->fds[3].revents = 0;
+    vis->mpd_state = VIS_MPD_READ_OK;
+    ringbuf_reset(vis->mpd_q);
+    ringbuf_reset(vis->mpd_buf);
+    ringbuf_append(vis->mpd_q,VIS_MPD_SEND_SUBSCRIBE);
+    ringbuf_append(vis->mpd_q,VIS_MPD_READ_SUBSCRIBE);
+    ringbuf_append(vis->mpd_q,VIS_MPD_SEND_STATUS);
+    ringbuf_append(vis->mpd_q,VIS_MPD_READ_STATUS);
+    ringbuf_append(vis->mpd_q,VIS_MPD_SEND_MESSAGE);
+    ringbuf_append(vis->mpd_q,VIS_MPD_READ_MESSAGE);
+    ringbuf_append(vis->mpd_q,VIS_MPD_SEND_CURRENTSONG);
+    ringbuf_append(vis->mpd_q,VIS_MPD_READ_CURRENTSONG);
+    ringbuf_append(vis->mpd_q,VIS_MPD_SEND_IDLE);
+    ringbuf_append(vis->mpd_q,VIS_MPD_READ_IDLE);
+
+    return 0;
+}
+
+
+static inline void
+visualizer_mpd_ok(visualizer *vis) {
+    char d[4097];
+    char mpd_major[UINT32_FMT];
+    char mpd_minor[UINT32_FMT];
+    char mpd_patch[UINT32_FMT];
+    char *p = d;
+    int len = 0;
+    int k = 0;
+    len = ringbuf_bytes_used(vis->mpd_buf);
+    ringbuf_memcpy_from(d,vis->mpd_buf,len);
+    d[len] = 0;
+
+    k = str_chr(d,'\n');
+    /* check that we have a full line */
+    if(k == len) {
+      ringbuf_memcpy_into(vis->mpd_buf,d,len);
+      return;
+    }
+
+    if(!case_starts(d,"ok")) {
+        /* we have a full line but no OK message? bail. */
+        strerr_die2x(1,"Connected, expected OK MPD but received: ",d);
+    }
+
+    if(case_starts(d,"ok mpd ")) {
+        p += 7;
+        uint32_scan(p,&vis->mpd_major);
+        k = str_chr(p,'.');
+        len -= 7;
+
+        if( k+1 < len) {
+          len -= k+1;
+          p += k+1;
+          uint32_scan(p,&vis->mpd_minor);
+          k = str_chr(p,'.');
+          if(k+1 < len) {
+            p += k + 1;
+            uint32_scan(p,&vis->mpd_patch);
+          }
+        }
+        mpd_major[uint32_fmt(mpd_major,vis->mpd_major)] = 0;
+        mpd_minor[uint32_fmt(mpd_minor,vis->mpd_minor)] = 0;
+        mpd_patch[uint32_fmt(mpd_patch,vis->mpd_patch)] = 0;
+        strerr_warn6x("Connected to MPD ",mpd_major,".",mpd_minor,".",mpd_patch);
+    }
+
+    vis->mpd_state = ringbuf_qget(vis->mpd_q);
+}
 
 static inline void
 visualizer_mpd_idle(visualizer *vis) {
@@ -531,28 +642,33 @@ visualizer_mpd_message(visualizer *vis) {
 }
 
 static inline void
-visualizer_process_mpd(visualizer *vis, int fd) {
+visualizer_process_mpd(visualizer *vis) {
     int bytes_read = 0;
 
     if(vis->mpd_state <= VIS_MPD_READ_MESSAGE) {
       if(ringbuf_bytes_free(vis->mpd_buf) > 0) {
-          bytes_read = ringbuf_read(fd,vis->mpd_buf,ringbuf_bytes_free(vis->mpd_buf));
-          if(bytes_read <= 0) {
-              strerr_warn1sys("Problem grabbing mpd data: ");
-              return;
+          bytes_read = ringbuf_read(vis->fds[3].fd,vis->mpd_buf,ringbuf_bytes_free(vis->mpd_buf));
+          if(bytes_read <= 0 && errno != EINPROGRESS) {
+              if(vis->mpd_major == 0 && vis->mpd_minor == 0 && vis->mpd_patch == 0) {
+                  strerr_die1sys(1,"Error connecting to MPD: ");
+              }
+              visualizer_connect_mpd(vis);
           }
       }
     }
 
     switch(vis->mpd_state) {
-        case VIS_MPD_READ_IDLE: visualizer_mpd_idle(vis); break;
-        case VIS_MPD_READ_STATUS: visualizer_mpd_status(vis); break;
-        case VIS_MPD_READ_CURRENTSONG: visualizer_mpd_currentsong(vis); break;
-        case VIS_MPD_READ_MESSAGE: visualizer_mpd_message(vis); break;
-        case VIS_MPD_SEND_IDLE:        fd_send(fd,"idle player message\n",20,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
-        case VIS_MPD_SEND_STATUS:      fd_send(fd,"status\n",7,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
-        case VIS_MPD_SEND_CURRENTSONG: fd_send(fd,"currentsong\n",12,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
-        case VIS_MPD_SEND_MESSAGE:     fd_send(fd,"readmessages\n",13,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
+        case VIS_MPD_READ_OK:            visualizer_mpd_ok(vis); break;
+        case VIS_MPD_READ_SUBSCRIBE:     visualizer_mpd_ok(vis); break;
+        case VIS_MPD_READ_IDLE:          visualizer_mpd_idle(vis); break;
+        case VIS_MPD_READ_STATUS:        visualizer_mpd_status(vis); break;
+        case VIS_MPD_READ_CURRENTSONG:   visualizer_mpd_currentsong(vis); break;
+        case VIS_MPD_READ_MESSAGE:       visualizer_mpd_message(vis); break;
+        case VIS_MPD_SEND_IDLE:          fd_send(vis->fds[3].fd,"idle player message\n",20,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
+        case VIS_MPD_SEND_STATUS:        fd_send(vis->fds[3].fd,"status\n",7,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
+        case VIS_MPD_SEND_CURRENTSONG:   fd_send(vis->fds[3].fd,"currentsong\n",12,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
+        case VIS_MPD_SEND_MESSAGE:       fd_send(vis->fds[3].fd,"readmessages\n",13,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
+        case VIS_MPD_SEND_SUBSCRIBE:     fd_send(vis->fds[3].fd,"subscribe visualizer\n",21,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
     }
 
     return;
@@ -657,6 +773,37 @@ visualizer_unload(visualizer *vis) {
     return 1;
 }
 
+static void
+visualizer_setup_mpd(visualizer *vis) {
+    char *mpd_host = getenv("MPD_HOST");
+    char *mpd_port = getenv("MPD_PORT");
+    uint16_t mpd_port_uint = 6600;
+    char *mpd_host_default = "127.0.0.1";
+
+    if(!vis->mpd) {
+        return;
+    }
+    if(!mpd_host) {
+        vis->mpd_host = mpd_host_default;
+    }
+    else {
+        vis->mpd_host = mpd_host;
+    }
+
+    if(vis->mpd_host[0] == '/') {
+        return;
+    }
+
+    if(mpd_port && !uint16_scan(mpd_port,&mpd_port_uint)) {
+        vis->mpd_port = 6600;
+    }
+    else {
+        vis->mpd_port = mpd_port_uint;
+    }
+
+    return;
+}
+
 int
 visualizer_init(visualizer *vis) {
     if(!vis) return 0;
@@ -676,14 +823,7 @@ visualizer_init(visualizer *vis) {
     pthread_t this_thread = pthread_self();
     struct sched_param sparams;
     struct stat st;
-    ip46_t ip = IP46_ZERO;
 
-    char *mpd_host = getenv("MPD_HOST");
-    char *mpd_port = getenv("MPD_PORT");
-    unsigned int mpd_port_uint = 6600;
-    char *mpd_host_default = "127.0.0.1";
-    char mpd_tmp[1] = { 0 } ;
-    int mpd_i = 0;
     stralloc realpath_lua = STRALLOC_ZERO;
 
     sparams.sched_priority = sched_get_priority_max(SCHED_FIFO);
@@ -748,95 +888,6 @@ visualizer_init(visualizer *vis) {
         strerr_die1sys(1,"Unable to trap SIGUSR2: ");
     }
 
-    if(vis->mpd) {
-        if(!mpd_host) {
-            mpd_host = mpd_host_default;
-        }
-        if(ip46_scan(mpd_host,&ip)) {
-            if(mpd_port && !uint_scan(mpd_port,&mpd_port_uint)) {
-                mpd_port_uint = 6600;
-            }
-            vis->fds[3].fd = ip.is6 ? socket_tcp6_b() : socket_tcp4_b();
-            if(vis->fds[3].fd == -1) {
-                fprintf(stderr,"Unable to open socket: %s\n",strerror(errno));
-                fflush(stderr);
-                visualizer_free(vis);
-                return -1;
-            }
-
-            if(socket_connect46(vis->fds[3].fd,&ip,mpd_port_uint) == -1 ) {
-                fprintf(stderr,"Connect to ip %s, port %u failed: %s\n",mpd_host,mpd_port_uint,strerror(errno));
-                fflush(stderr);
-                visualizer_free(vis);
-                return -1;
-            }
-        }
-        else {
-            vis->fds[3].fd = ipc_stream_b();
-            if(vis->fds[3].fd == -1) {
-                fprintf(stderr,"Unable to open socket: %s\n",strerror(errno));
-                fflush(stderr);
-                visualizer_free(vis);
-                return -1;
-            }
-
-            if(ipc_connect(vis->fds[3].fd,mpd_host) == 0 ) {
-                fprintf(stderr,"Unable to connect to socket: %s\n",strerror(errno));
-                fflush(stderr);
-                visualizer_free(vis);
-                return -1;
-            }
-        }
-
-        mpd_i = 0;
-        while(*mpd_tmp != '\n') {
-            if(fd_read(vis->fds[3].fd,mpd_tmp,1) <= 0) {
-                fprintf(stderr,"Error reading MPD data: %s",strerror(errno));
-                fflush(stderr);
-                visualizer_free(vis);
-                return -1;
-            }
-            if(mpd_i == 0 && mpd_tmp[0] != 'O') {
-                visualizer_free(vis);
-                return -1;
-            }
-            else if(mpd_i == 1 && mpd_tmp[0] != 'K') {
-                visualizer_free(vis);
-                return -1;
-            }
-            mpd_i++;
-        }
-        if(fd_write(vis->fds[3].fd,"subscribe visualizer\n",strlen("subscribe visualizer\n")) <= 0) {
-            fprintf(stderr,"Error sending MPD data: %s",strerror(errno));
-            fflush(stderr);
-            visualizer_free(vis);
-            return 0;
-        }
-
-        mpd_tmp[0] = 0;
-
-        mpd_i = 0;
-        while(*mpd_tmp != '\n') {
-            if(fd_read(vis->fds[3].fd,mpd_tmp,1) <= 0) {
-                fprintf(stderr,"Error reading MPD data: %s",strerror(errno));
-                fflush(stderr);
-                visualizer_free(vis);
-                return 0;
-            }
-            if(mpd_i == 0 && mpd_tmp[0] != 'O') {
-                visualizer_free(vis);
-                return -1;
-            }
-            else if(mpd_i == 1 && mpd_tmp[0] != 'K') {
-                visualizer_free(vis);
-                return -1;
-            }
-            mpd_i++;
-        }
-
-        vis->fds[3].events = IOPAUSE_READ | IOPAUSE_EXCEPT;
-        ndelay_on(vis->fds[3].fd);
-    }
 
     vis->Lua = 0;
     vis->Lua = luaL_newstate();
@@ -927,19 +978,23 @@ visualizer_init(visualizer *vis) {
 
     if(vis->lua_folder) {
         if(!stralloc_cats(&realpath_lua,"package.path = '")) {
+            strerr_warn1x("Out of memory!");
             visualizer_free(vis);
             return -1;
         }
         if(sarealpath(&realpath_lua,vis->lua_folder) != -1) {
             if(!stralloc_cats(&realpath_lua,"/?.lua;' .. package.path")) {
+                strerr_warn1x("Out of memory!");
                 visualizer_free(vis);
                 return -1;
             }
             if(!stralloc_0(&realpath_lua)) {
+                strerr_warn1x("Out of memory!");
                 visualizer_free(vis);
                 return -1;
             }
             if(luaL_dostring(vis->Lua,realpath_lua.s) != 0) {
+                strerr_warn2x("Error setting lua package.path: ",lua_tostring(vis->Lua,-1));
                 visualizer_free(vis);
                 return -1;
             }
@@ -1005,23 +1060,25 @@ visualizer_init(visualizer *vis) {
     vis->ms_per_frame = (vis->processor.sample_window_len) / (vis->samplerate / 1000);
     vis->delay = (1000 / (vis->framerate / 2)) * 1000000;
 
-    if(vis->fds[3].fd > 0) {
+    visualizer_setup_mpd(vis);
+    if(visualizer_connect_mpd(vis) == -1) {
+        strerr_warn1x("Error connecting to MPD");
+        visualizer_free(vis);
+        return -1;
+    }
+
+    if(vis->fds[3].fd > -1) {
       ndelay_off(vis->fds[3].fd);
-      vis->mpd_state = VIS_MPD_SEND_STATUS;
-      ringbuf_append(vis->mpd_q,VIS_MPD_READ_STATUS);
-      ringbuf_append(vis->mpd_q,VIS_MPD_SEND_MESSAGE);
-      ringbuf_append(vis->mpd_q,VIS_MPD_READ_MESSAGE);
-      ringbuf_append(vis->mpd_q,VIS_MPD_SEND_CURRENTSONG);
-      ringbuf_append(vis->mpd_q,VIS_MPD_READ_CURRENTSONG);
-      ringbuf_append(vis->mpd_q,VIS_MPD_SEND_IDLE);
-      ringbuf_append(vis->mpd_q,VIS_MPD_READ_IDLE);
-      visualizer_process_mpd(vis,vis->fds[3].fd); /* status */
-      visualizer_process_mpd(vis,vis->fds[3].fd); /* status */
-      visualizer_process_mpd(vis,vis->fds[3].fd); /* message */
-      visualizer_process_mpd(vis,vis->fds[3].fd); /* message */
-      visualizer_process_mpd(vis,vis->fds[3].fd); /* currentsong */
-      visualizer_process_mpd(vis,vis->fds[3].fd); /* currentsong */
-      visualizer_process_mpd(vis,vis->fds[3].fd); /* send idle */
+      visualizer_process_mpd(vis); /* ok */
+      visualizer_process_mpd(vis); /* subscribe */
+      visualizer_process_mpd(vis); /* subscribe */
+      visualizer_process_mpd(vis); /* status */
+      visualizer_process_mpd(vis); /* status */
+      visualizer_process_mpd(vis); /* message */
+      visualizer_process_mpd(vis); /* message */
+      visualizer_process_mpd(vis); /* currentsong */
+      visualizer_process_mpd(vis); /* currentsong */
+      visualizer_process_mpd(vis); /* send idle */
       /* read idle handled in event loop */
       ndelay_on(vis->fds[3].fd);
     }
@@ -1067,14 +1124,17 @@ visualizer_loop(visualizer *vis) {
     }
 
     switch(vis->mpd_state) {
+        case VIS_MPD_READ_OK:
         case VIS_MPD_READ_IDLE:
         case VIS_MPD_READ_STATUS:
         case VIS_MPD_READ_CURRENTSONG:
-        case VIS_MPD_READ_MESSAGE: vis->fds[3].events = IOPAUSE_READ; break;
+        case VIS_MPD_READ_MESSAGE:
+        case VIS_MPD_READ_SUBSCRIBE: vis->fds[3].events = IOPAUSE_READ; break;
         case VIS_MPD_SEND_IDLE:
         case VIS_MPD_SEND_STATUS:
         case VIS_MPD_SEND_CURRENTSONG:
-        case VIS_MPD_SEND_MESSAGE: vis->fds[3].events = IOPAUSE_WRITE; break;
+        case VIS_MPD_SEND_MESSAGE:
+        case VIS_MPD_SEND_SUBSCRIBE: vis->fds[3].events = IOPAUSE_WRITE; break;
     }
 
     events = iopause_stamp(vis->fds,4,NULL,NULL);
@@ -1142,7 +1202,7 @@ visualizer_loop(visualizer *vis) {
     }
 
     if(events && vis->fds[3].revents) {
-        visualizer_process_mpd(vis,vis->fds[3].fd);
+        visualizer_process_mpd(vis);
     }
     }
 

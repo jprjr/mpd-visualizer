@@ -48,16 +48,24 @@ typedef struct visualizer {
     ringbuf_t mpd_buf;
     ringbuf_t mpd_q;
     unsigned int mpd_state;
+    char *mpd_host;
+    int32_t mpd_port;
+    uint32_t mpd_major;
+    uint32_t mpd_minor;
+    uint32_t mpd_patch;
 } visualizer;
 
-#define VIS_MPD_READ_IDLE 0
-#define VIS_MPD_READ_STATUS 1
-#define VIS_MPD_READ_CURRENTSONG 2
-#define VIS_MPD_READ_MESSAGE 3
-#define VIS_MPD_SEND_IDLE 4
-#define VIS_MPD_SEND_STATUS 5
-#define VIS_MPD_SEND_CURRENTSONG 6
-#define VIS_MPD_SEND_MESSAGE 7
+#define VIS_MPD_READ_OK 0
+#define VIS_MPD_READ_SUBSCRIBE 1
+#define VIS_MPD_READ_IDLE 2
+#define VIS_MPD_READ_STATUS 3
+#define VIS_MPD_READ_CURRENTSONG 4
+#define VIS_MPD_READ_MESSAGE 5
+#define VIS_MPD_SEND_IDLE 6
+#define VIS_MPD_SEND_STATUS 7
+#define VIS_MPD_SEND_CURRENTSONG 8
+#define VIS_MPD_SEND_MESSAGE 9
+#define VIS_MPD_SEND_SUBSCRIBE 10
 
 #define VISUALIZER_ZERO { \
   .argv = NULL, \
@@ -93,6 +101,11 @@ typedef struct visualizer {
   .mpd_buf = NULL, \
   .mpd_q = NULL, \
   .mpd_state = VIS_MPD_READ_IDLE, \
+  .mpd_host = NULL, \
+  .mpd_port = -1, \
+  .mpd_major = 0, \
+  .mpd_minor = 0, \
+  .mpd_patch = 0, \
 }
 
 #ifdef __cplusplus
