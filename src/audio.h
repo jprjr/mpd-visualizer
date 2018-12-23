@@ -36,8 +36,9 @@ typedef struct audio_processor {
     int firstflag;
 
     ringbuf_t samples;
-    double *window; /* window[sample_window_len] */
+    double *window; /* window[chunk_len] */
 
+    double *fftw_buffer;   /* samples_mono[chunk_len] */
     double *fftw_in;   /* samples_mono[chunk_len] */
     fftw_complex *fftw_out; /*fftw_output[fftw_len] */
     fftw_plan plan;
