@@ -304,7 +304,7 @@ audio_processor_init(audio_processor *processor) {
         return audio_processor_free(processor);
     }
 
-    processor->window = (double *)malloc(sizeof(double) * processor->sample_window_len);
+    processor->window = (double *)malloc(sizeof(double) * processor->chunk_len);
     if(!processor->window) {
         return audio_processor_free(processor);
     }
@@ -331,17 +331,12 @@ audio_processor_init(audio_processor *processor) {
     if(!processor->output_buffer) {
         return audio_processor_free(processor);
     }
+
     memset(processor->output_buffer,0,processor->output_buffer_len);
+    memset(processor->fftw_buffer,0,sizeof(double) * processor->chunk_len);
+    memset(processor->fftw_in,0,sizeof(double) * processor->chunk_len);
 
-    for(i=0; i<processor->chunk_len; i++) {
-        processor->fftw_buffer[i] = 0;
-    }
-
-    for(i=processor->sample_window_len; i<processor->chunk_len; i++) {
-        processor->fftw_in[i] = 0;
-    }
-
-    processor->spectrum_cur = (frange *)malloc(sizeof(frange) * processor->spectrum_len + 1);
+    processor->spectrum_cur = (frange *)malloc(sizeof(frange) * (processor->spectrum_len + 1));
     if(!processor->spectrum_cur) {
         return audio_processor_free(processor);
     }
