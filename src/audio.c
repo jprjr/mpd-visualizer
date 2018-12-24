@@ -15,8 +15,21 @@
 extern "C" {
 #endif
 
+static double window_none(int i, int n) {
+    (void)i;
+    (void)n;
+    return 1.0f;
+}
+
 static double window_hann(int i, int n) {
-    return 0.5f * (1 - cos(2.0f * M_PI *i/((double)n)));
+    return 0.50f * (1.0f - cos( (2.0f * M_PI *i)/((double)n-1.0f)));
+}
+
+static double window_blackman(int i, int n) {
+    double a_0 = 0.42f;
+    double a_1 = 0.5f;
+    double a_2 = 0.08f;
+    return a_0 - ( a_1 * cos( (2.0f * M_PI * i) / ((double)n - 1.0f) )) + ( a_2 * cos( (4.0f * M_PI * i)/ ( (double)n - 1) ) );
 }
 
 static double window_blackman_harris(int i, int n) {
@@ -51,6 +64,7 @@ static double find_amplitude_max(fftw_complex *out, unsigned int start, unsigned
     double tmp = 0.0f;
     for(i=start;i<=end;i++) {
         tmp = 20.0f * log10(2.0f * cabs(out[i]) / chunk_len);
+        /* see https://groups.google.com/d/msg/comp.dsp/cZsS1ftN5oI/rEjHXKTxgv8J */
         val = audio_max(tmp,val);
     }
     return val;
@@ -66,7 +80,8 @@ static void mono_downmix(audio_processor *processor) {
     char *buffer = processor->output_buffer;
 
     while(i<o) {
-        processor->fftw_in[i] = processor->fftw_buffer[o+i];
+        processor->fftw_buffer[i] = processor->fftw_buffer[o+i];
+        processor->fftw_in[i] = processor->fftw_buffer[i];
         processor->fftw_in[i] *= processor->window[i];
         i++;
     }
@@ -101,6 +116,7 @@ static void mono_downmix(audio_processor *processor) {
         }
         processor->fftw_buffer[o+i] = (double)m / processor->sample_max_val;
         processor->fftw_in[o+i] = processor->fftw_buffer[o+i] * processor->window[i+o];
+
         i++;
     }
 }
@@ -113,22 +129,25 @@ static void stereo_downmix(audio_processor *processor) {
     int32_t l = 0;
     int32_t r = 0;
     int32_t m = 0;
+    int64_t t = 0;
 
     char *buffer = processor->output_buffer;
 
     while(i<o) {
-        processor->fftw_in[i] = processor->fftw_buffer[o+i];
+        processor->fftw_buffer[i] = processor->fftw_buffer[o+i];
+        processor->fftw_in[i] = processor->fftw_buffer[i];
         processor->fftw_in[i] *= processor->window[i];
         i++;
     }
+
     i=0;
 
     while(i<processor->sample_window_len) {
         s = i * processor->samplesize * 2;
         switch(processor->samplesize) {
             case 1: {
-                l += buffer[s];
-                r += buffer[s+1];
+                l = buffer[s];
+                r = buffer[s+1];
                 break;
             }
             case 2: {
@@ -162,11 +181,14 @@ static void stereo_downmix(audio_processor *processor) {
                 break;
             }
         }
-        m = (l/2) + (r/2);
+        t = l;
+        t += r;
+        m = t / 2;
         processor->fftw_buffer[o+i] = (double)m / processor->sample_max_val;
         processor->fftw_in[o+i] = processor->fftw_buffer[o+i] * processor->window[i+o];
         i++;
     }
+
 }
 
 
@@ -180,13 +202,14 @@ void audio_processor_fftw(audio_processor *processor) {
     unsigned int i = 0;
 
     if(!processor->plan) {
-        processor->plan = fftw_plan_dft_r2c_1d(processor->chunk_len,processor->fftw_in,processor->fftw_out,FFTW_ESTIMATE);
+        processor->plan = fftw_plan_dft_r2c_1d(processor->chunk_len,processor->fftw_in,processor->fftw_out,FFTW_MEASURE);
     }
 
     fftw_execute(processor->plan);
 
     for(i=0;i<processor->spectrum_len;i++) {
         processor->spectrum_cur[i].amp = find_amplitude_max(processor->fftw_out,processor->spectrum_cur[i].first_bin,processor->spectrum_cur[i].last_bin,processor->chunk_len);
+
         if(!isfinite(processor->spectrum_cur[i].amp)) {
             processor->spectrum_cur[i].amp = -100.0f; /* filtered out next line */
         }
@@ -230,13 +253,12 @@ audio_processor_init(audio_processor *processor) {
     if(!processor) return 0;
 
     unsigned int i = 0;
-    unsigned int j = 0;
     double bin_size = 0.0f;
-    double freq_ratio = 0.0f;
-    double freq_min = 40.0f;
-    double freq_max = 20000.0f / (double)processor->spectrum_len * 2;
-    // double freq_max = 20000.0f;
-    double freq_range = freq_max - freq_min;
+    double freq_min = 50.0f;
+    double freq_max = 10000.0f;
+
+    double freq_const = log10(freq_min / freq_max) /
+      (1.0f / ((double)processor->spectrum_len + 1.0f) - 1.0f);
 
     if(processor->channels > 2) {
         strerr_warn1x("Too many channels, max is 2");
@@ -256,7 +278,9 @@ audio_processor_init(audio_processor *processor) {
     while(processor->chunk_len < processor->sample_window_len) {
         processor->chunk_len = processor->chunk_len * 2;
     }
+
     bin_size = (double)processor->samplerate / (double)processor->chunk_len;
+
     processor->fftw_len = (processor->chunk_len / 2) + 1;
     processor->firstflag = 0;
     if(processor->samplesize > 1) {
@@ -285,8 +309,7 @@ audio_processor_init(audio_processor *processor) {
         return audio_processor_free(processor);
     }
     for(i=0;i<processor->chunk_len;i++) {
-        processor->window[i] = window_blackman_harris(i,processor->sample_window_len - 1);
-        /* processor->window[i] = window_hann(i,processor->sample_window_len - 1); */
+        processor->window[i] = window_hann(i,processor->chunk_len);
     }
 
     processor->fftw_buffer = (double *)fftw_malloc(sizeof(double) * processor->chunk_len);
@@ -318,37 +341,25 @@ audio_processor_init(audio_processor *processor) {
         processor->fftw_in[i] = 0;
     }
 
-    processor->spectrum_cur = (frange *)malloc(sizeof(frange) * processor->spectrum_len);
+    processor->spectrum_cur = (frange *)malloc(sizeof(frange) * processor->spectrum_len + 1);
     if(!processor->spectrum_cur) {
         return audio_processor_free(processor);
     }
 
-    for(i=0;i<processor->spectrum_len;i++) {
+    for(i=0;i<processor->spectrum_len+1;i++) {
         processor->spectrum_cur[i].first_bin = 0;
         processor->spectrum_cur[i].last_bin = 0;
-        processor->spectrum_cur[i].freq = freq_min + ((freq_range / (processor->spectrum_len - 1)) * i);
         processor->spectrum_cur[i].amp = 0.0f;
         processor->spectrum_cur[i].prevamp = 0.0f;
-    }
 
-    j = 1;
-    while(j < processor->spectrum_cur[0].freq / bin_size) {
-        processor->spectrum_cur[0].first_bin = audio_notzero(audio_min(processor->spectrum_cur[0].first_bin,j),j);
-        processor->spectrum_cur[0].last_bin = audio_max(processor->spectrum_cur[0].last_bin,j);
-        j++;
-    }
-    for(i = 1;
-        i < (processor->spectrum_len - 1) && j < ((double)processor->chunk_len/2 - 1) && processor->spectrum_cur[i+1].freq < ((double)processor->samplerate/2); i++) {
-        freq_ratio = (processor->spectrum_cur[i+1].freq) / bin_size;
-        while(j < freq_ratio) {
-            processor->spectrum_cur[i].first_bin = audio_notzero(audio_min(processor->spectrum_cur[i].first_bin,j),j);
-            processor->spectrum_cur[i].last_bin = audio_max(processor->spectrum_cur[i].last_bin,j);
-            j++;
+        double cutoff = freq_max * pow(10, freq_const * (-1.0f) + ((((double)i + 1.0f) / ((double)processor->spectrum_len + 1.0f)) * freq_const));
+        double fre = cutoff / ((double)processor->samplerate / 2.0f);
+
+        processor->spectrum_cur[i].freq = cutoff;
+        processor->spectrum_cur[i].first_bin = fre * processor->chunk_len / 2;
+        if(i != 0) {
+           processor->spectrum_cur[i-1].last_bin = processor->spectrum_cur[i].first_bin - 1;
         }
-    }
-    for(; j < ((double)processor->chunk_len/2 + 1); j++) {
-        processor->spectrum_cur[processor->spectrum_len-1].first_bin = audio_notzero(audio_min(processor->spectrum_cur[processor->spectrum_len-1].first_bin,j),j);
-        processor->spectrum_cur[processor->spectrum_len-1].last_bin = audio_max(processor->spectrum_cur[processor->spectrum_len-1].last_bin,j);
     }
 
     return 1;
