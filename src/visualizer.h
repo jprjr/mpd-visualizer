@@ -8,6 +8,7 @@
 #include "thread.h"
 #include "ringbuf.h"
 #include <skalibs/skalibs.h>
+#include <skalibs/genalloc.h>
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
@@ -48,11 +49,13 @@ typedef struct visualizer {
     ringbuf_t mpd_buf;
     ringbuf_t mpd_q;
     unsigned int mpd_state;
+    stralloc mpd_password;
     char *mpd_host;
     int32_t mpd_port;
     uint32_t mpd_major;
     uint32_t mpd_minor;
     uint32_t mpd_patch;
+    genalloc iplist;
 } visualizer;
 
 #define VIS_MPD_READ_OK 0
@@ -61,11 +64,15 @@ typedef struct visualizer {
 #define VIS_MPD_READ_STATUS 3
 #define VIS_MPD_READ_CURRENTSONG 4
 #define VIS_MPD_READ_MESSAGE 5
-#define VIS_MPD_SEND_IDLE 6
-#define VIS_MPD_SEND_STATUS 7
-#define VIS_MPD_SEND_CURRENTSONG 8
-#define VIS_MPD_SEND_MESSAGE 9
-#define VIS_MPD_SEND_SUBSCRIBE 10
+#define VIS_MPD_READ_PASSWORD 6
+#define VIS_MPD_READ_PING 7
+#define VIS_MPD_SEND_IDLE 8
+#define VIS_MPD_SEND_STATUS 9
+#define VIS_MPD_SEND_CURRENTSONG 10
+#define VIS_MPD_SEND_MESSAGE 11
+#define VIS_MPD_SEND_SUBSCRIBE 12
+#define VIS_MPD_SEND_PASSWORD 13
+#define VIS_MPD_SEND_PING 14
 
 #define VISUALIZER_ZERO { \
   .argv = NULL, \
@@ -101,11 +108,13 @@ typedef struct visualizer {
   .mpd_buf = NULL, \
   .mpd_q = NULL, \
   .mpd_state = VIS_MPD_READ_IDLE, \
+  .mpd_password = STRALLOC_ZERO, \
   .mpd_host = NULL, \
   .mpd_port = -1, \
   .mpd_major = 0, \
   .mpd_minor = 0, \
   .mpd_patch = 0, \
+  .iplist = GENALLOC_ZERO, \
 }
 
 #ifdef __cplusplus

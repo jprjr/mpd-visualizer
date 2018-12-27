@@ -12,7 +12,7 @@ CFLAGS += $(shell $(PKGCONFIG) --cflags $(LUA))
 CFLAGS += -Wall -Wextra $(CFLAGS_OPTIMIZE)
 CFLAGS += -D_GNU_SOURCE
 
-LDFLAGS = -lskarnet -lm
+LDFLAGS = -ls6dns -lskarnet -lm
 LDFLAGS += $(shell $(PKGCONFIG) --libs fftw3)
 LDFLAGS += $(shell $(PKGCONFIG) --libs $(LUA))
 

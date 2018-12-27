@@ -2,10 +2,12 @@
 #include <lualib.h>
 #include <lauxlib.h>
 #include <skalibs/skalibs.h>
+#include <skalibs/buffer.h>
 #include <skalibs/bytestr.h>
 #include <skalibs/ip46.h>
 #include <skalibs/webipc.h>
 #include <skalibs/types.h>
+#include <s6-dns/s6dns.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
@@ -29,6 +31,8 @@
 #define func_list_s(g) genalloc_s(lua_func_list,g)
 #define func_list_free(g) genalloc_free(lua_func_list,g)
 #define func_list_append(g, p) genalloc_append(lua_func_list,g, p)
+
+#define dienomem() strerr_die1x(1,"Out of memory!")
 
 static visualizer *global_vis;
 
@@ -79,6 +83,47 @@ vis_ringbuf_write(int fd, ringbuf_t rb, size_t count)
     }
 
     return n;
+}
+
+static inline int
+resolve_dns(genalloc *ips, char const *name) {
+    stralloc ip4 = STRALLOC_ZERO;
+    stralloc ip6 = STRALLOC_ZERO;
+    ip46_t ip = IP46_ZERO;
+    tain_t dl = TAIN_ZERO;
+    tain_t now = TAIN_ZERO;
+    int ip4_res = 0;
+    int ip6_res = 0;
+    int r = 0;
+    unsigned int i = 0;
+
+    tain_now(&now);
+    tain_addsec(&dl,&now,5);
+    ip4_res = s6dns_resolve_a_g(&ip4,name,strlen(name),0,&dl);
+    tain_now(&now);
+    tain_addsec(&dl,&now,5);
+    ip6_res = s6dns_resolve_aaaa_g(&ip6,name,strlen(name),0,&dl);
+
+    if(ip4_res > 0) {
+        r = 1;
+        for(i=0;i<ip4.len;i+=4) {
+            ip46_from_ip4(&ip,ip4.s+i);
+            genalloc_append(ip46_t,ips,&ip);
+        }
+    }
+    if(ip6_res > 0) {
+        r += 2;
+        for(i=0;i<ip6.len;i+=16) {
+            ip46_from_ip6(&ip,ip6.s+i);
+            genalloc_append(ip46_t,ips,&ip);
+        }
+    }
+
+    stralloc_free(&ip4);
+    stralloc_free(&ip6);
+
+    return r;
+
 }
 
 static inline lua_func_list *
@@ -221,10 +266,13 @@ visualizer_free(visualizer *vis) {
     stralloc_free(&mpd_title);
     stralloc_free(&mpd_album);
     stralloc_free(&mpd_artist);
+    stralloc_free(&(vis->mpd_password));
+    genalloc_free(ip46_t,&(vis->iplist));
     lua_func_list_free(vis, &(vis->lua_funcs));
     thread_queue_term(&(vis->image_queue));
     avi_stream_free(&(vis->stream));
     audio_processor_free(&(vis->processor));
+    s6dns_finish();
 
     if(vis->mpd_q) ringbuf_free(&(vis->mpd_q));
     if(vis->mpd_buf) ringbuf_free(&(vis->mpd_buf));
@@ -252,8 +300,13 @@ visualizer_grab_audio(visualizer *vis, int fd) {
 
 static int
 visualizer_connect_mpd(visualizer *vis) {
-    ip46_t ip = IP46_ZERO;
+    ip46_t *ip;
     int r = 0;
+    unsigned int i = 0;
+    int connected = 0;
+#ifdef DEBUG
+    char ipstr[IP46_FMT];
+#endif
 
     if(!vis->mpd) {
         return 1;
@@ -276,20 +329,47 @@ visualizer_connect_mpd(visualizer *vis) {
             strerr_warn1sys("Unable to connect to socket: ");
             return -1;
         }
-    } else if(ip46_scan(vis->mpd_host,&ip)) {
-        vis->fds[3].fd = ip.is6 ? socket_tcp6_nb() : socket_tcp4_nb();
-        if(vis->fds[3].fd == -1) {
-            strerr_warn1sys("Unable to open socket: ");
-            return -1;
-        }
-
-        r = socket_connect46(vis->fds[3].fd,&ip,vis->mpd_port);
-        if(r == -1 && errno != EINPROGRESS) {
-            strerr_warn1sys("Unable to connect to ip: ");
-            return -1;
-        }
     } else {
-        /* todo: hostname lookup */
+        while(i++ < genalloc_len(ip46_t,&(vis->iplist))) {
+            ip = genalloc_s(ip46_t,&(vis->iplist)) + (i-1);
+
+#ifdef DEBUG
+            {
+                memset(ipstr,0,IP46_FMT);
+                ipstr[ip46_fmt(ipstr,ip)] = 0;
+                buffer_puts(buffer_2,"Connecting to ");
+                buffer_puts(buffer_2,ipstr);
+                buffer_puts(buffer_2,"\n");
+                buffer_flush(buffer_2);
+            }
+#endif
+
+            if(ip46_is6(ip)) {
+                if(byte_equal(ip->ip,16,"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0")) {
+                    continue;
+                }
+            } else {
+                if(byte_equal(ip->ip,4,"\0\0\0\0")) {
+                    continue;
+                }
+            }
+            vis->fds[3].fd = ip46_is6(ip) ? socket_tcp6_nb() : socket_tcp4_nb();
+            if(vis->fds[3].fd == -1) {
+                strerr_warn1sys("Unable to open socket: ");
+                continue;
+            }
+
+            r = socket_connect46(vis->fds[3].fd,ip,vis->mpd_port);
+            if(r == -1 && errno != EINPROGRESS) {
+                strerr_warn1sys("Unable to connect to ip: ");
+                continue;
+            }
+            connected = 1;
+            break;
+        }
+        if(connected == 0) {
+            return -1;
+        }
     }
 
     vis->fds[3].events = IOPAUSE_READ | IOPAUSE_EXCEPT;
@@ -297,6 +377,13 @@ visualizer_connect_mpd(visualizer *vis) {
     vis->mpd_state = VIS_MPD_READ_OK;
     ringbuf_reset(vis->mpd_q);
     ringbuf_reset(vis->mpd_buf);
+    if(vis->mpd_password.len > 0) {
+      ringbuf_append(vis->mpd_q,VIS_MPD_SEND_PASSWORD);
+      ringbuf_append(vis->mpd_q,VIS_MPD_READ_PASSWORD);
+    }
+    /* quick sanity check */
+    ringbuf_append(vis->mpd_q,VIS_MPD_SEND_PING);
+    ringbuf_append(vis->mpd_q,VIS_MPD_READ_PING);
     ringbuf_append(vis->mpd_q,VIS_MPD_SEND_SUBSCRIBE);
     ringbuf_append(vis->mpd_q,VIS_MPD_READ_SUBSCRIBE);
     ringbuf_append(vis->mpd_q,VIS_MPD_SEND_STATUS);
@@ -315,9 +402,11 @@ visualizer_connect_mpd(visualizer *vis) {
 static inline void
 visualizer_mpd_ok(visualizer *vis) {
     char d[4097];
+#ifdef DEBUG
     char mpd_major[UINT32_FMT];
     char mpd_minor[UINT32_FMT];
     char mpd_patch[UINT32_FMT];
+#endif
     char *p = d;
     int len = 0;
     int k = 0;
@@ -330,6 +419,10 @@ visualizer_mpd_ok(visualizer *vis) {
     if(k == len) {
       ringbuf_memcpy_into(vis->mpd_buf,d,len);
       return;
+    }
+
+    if(case_starts(d,"ack")) {
+        strerr_die2x(1,"MPD returned error: ",d);
     }
 
     if(!case_starts(d,"ok")) {
@@ -353,10 +446,12 @@ visualizer_mpd_ok(visualizer *vis) {
             uint32_scan(p,&vis->mpd_patch);
           }
         }
+#ifdef DEBUG
         mpd_major[uint32_fmt(mpd_major,vis->mpd_major)] = 0;
         mpd_minor[uint32_fmt(mpd_minor,vis->mpd_minor)] = 0;
         mpd_patch[uint32_fmt(mpd_patch,vis->mpd_patch)] = 0;
         strerr_warn6x("Connected to MPD ",mpd_major,".",mpd_minor,".",mpd_patch);
+#endif
     }
 
     vis->mpd_state = ringbuf_qget(vis->mpd_q);
@@ -379,6 +474,10 @@ visualizer_mpd_idle(visualizer *vis) {
 
         /* check that we have a full line */
         if(!d[i+k]) break;
+
+        if(case_starts(d,"ack")) {
+            strerr_die2x(1,"MPD returned error: ",d);
+        }
 
         if(case_starts(d+i,"ok")) {
             ok = 1;
@@ -431,6 +530,10 @@ visualizer_mpd_status(visualizer *vis) {
         k = str_chr(d+i,'\n');
 
         if(!d[i+k]) break;
+
+        if(case_starts(d,"ack")) {
+            strerr_die2x(1,"MPD returned error: ",d);
+        }
 
         if(case_starts(d+i,"ok")) {
             ok = 1;
@@ -539,6 +642,10 @@ visualizer_mpd_currentsong(visualizer *vis) {
 
         if(!d[i+k]) break;
 
+        if(case_starts(d,"ack")) {
+            strerr_die2x(1,"MPD returned error: ",d);
+        }
+
         if(case_starts(d+i,"ok")) {
             ok = 1;
             break;
@@ -611,6 +718,10 @@ visualizer_mpd_message(visualizer *vis) {
     lua_getglobal(vis->Lua,"song");
 
     for(i=0; i<len; i+= str_chr(d+i,'\n')+1) {
+        if(case_starts(d,"ack")) {
+            strerr_die2x(1,"MPD returned error: ",d);
+        }
+
         if(case_starts(d+i,"ok")) {
             ok = 1;
             break;
@@ -642,18 +753,41 @@ visualizer_mpd_message(visualizer *vis) {
 }
 
 static inline void
+visualizer_send_mpd(visualizer *vis, char *cmd, int len) {
+#ifdef DEBUG
+    buffer_put(buffer_2,"> ",2);
+    buffer_put(buffer_2,cmd,len);
+    buffer_flush(buffer_2);
+#endif
+    int r = fd_send(vis->fds[3].fd,cmd,len,0);
+    if(r != len) {
+        strerr_die1sys(1,"Error sending to MPD: ");
+    }
+    vis->mpd_state = ringbuf_qget(vis->mpd_q);
+}
+
+static inline void
 visualizer_process_mpd(visualizer *vis) {
     int bytes_read = 0;
+    char buffer[4096];
 
-    if(vis->mpd_state <= VIS_MPD_READ_MESSAGE) {
+    if(vis->mpd_state <= VIS_MPD_READ_PING) {
       if(ringbuf_bytes_free(vis->mpd_buf) > 0) {
-          bytes_read = ringbuf_read(vis->fds[3].fd,vis->mpd_buf,ringbuf_bytes_free(vis->mpd_buf));
+          bytes_read = fd_read(vis->fds[3].fd,buffer,ringbuf_bytes_free(vis->mpd_buf));
+
           if(bytes_read <= 0 && errno != EINPROGRESS) {
               if(vis->mpd_major == 0 && vis->mpd_minor == 0 && vis->mpd_patch == 0) {
                   strerr_die1sys(1,"Error connecting to MPD: ");
               }
               visualizer_connect_mpd(vis);
           }
+
+#ifdef DEBUG
+          buffer_put(buffer_2,"< ", 2);
+          buffer_put(buffer_2,buffer,bytes_read);
+          buffer_flush(buffer_2);
+#endif
+          ringbuf_memcpy_into(vis->mpd_buf,buffer,bytes_read);
       }
     }
 
@@ -664,11 +798,15 @@ visualizer_process_mpd(visualizer *vis) {
         case VIS_MPD_READ_STATUS:        visualizer_mpd_status(vis); break;
         case VIS_MPD_READ_CURRENTSONG:   visualizer_mpd_currentsong(vis); break;
         case VIS_MPD_READ_MESSAGE:       visualizer_mpd_message(vis); break;
-        case VIS_MPD_SEND_IDLE:          fd_send(vis->fds[3].fd,"idle player message\n",20,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
-        case VIS_MPD_SEND_STATUS:        fd_send(vis->fds[3].fd,"status\n",7,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
-        case VIS_MPD_SEND_CURRENTSONG:   fd_send(vis->fds[3].fd,"currentsong\n",12,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
-        case VIS_MPD_SEND_MESSAGE:       fd_send(vis->fds[3].fd,"readmessages\n",13,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
-        case VIS_MPD_SEND_SUBSCRIBE:     fd_send(vis->fds[3].fd,"subscribe visualizer\n",21,0); vis->mpd_state = ringbuf_qget(vis->mpd_q); break;
+        case VIS_MPD_READ_PASSWORD:      visualizer_mpd_ok(vis); break;
+        case VIS_MPD_READ_PING:          visualizer_mpd_ok(vis); break;
+        case VIS_MPD_SEND_IDLE:          visualizer_send_mpd(vis,"idle player message\n",20); break;
+        case VIS_MPD_SEND_STATUS:        visualizer_send_mpd(vis,"status\n",7); break;
+        case VIS_MPD_SEND_CURRENTSONG:   visualizer_send_mpd(vis,"currentsong\n",12); break;
+        case VIS_MPD_SEND_MESSAGE:       visualizer_send_mpd(vis,"readmessages\n",13); break;
+        case VIS_MPD_SEND_SUBSCRIBE:     visualizer_send_mpd(vis,"subscribe visualizer\n",21); break;
+        case VIS_MPD_SEND_PASSWORD:      visualizer_send_mpd(vis,vis->mpd_password.s,vis->mpd_password.len); break;
+        case VIS_MPD_SEND_PING:          visualizer_send_mpd(vis,"ping\n",5); break;
     }
 
     return;
@@ -779,6 +917,12 @@ visualizer_setup_mpd(visualizer *vis) {
     char *mpd_port = getenv("MPD_PORT");
     uint16_t mpd_port_uint = 6600;
     char *mpd_host_default = "127.0.0.1";
+    ip46_t ip = IP46_ZERO;
+    int at = 0;
+    int len = 0;
+#ifdef DEBUG
+    char ipstr[IP46_FMT];
+#endif
 
     if(!vis->mpd) {
         return;
@@ -787,7 +931,18 @@ visualizer_setup_mpd(visualizer *vis) {
         vis->mpd_host = mpd_host_default;
     }
     else {
-        vis->mpd_host = mpd_host;
+        len = strlen(mpd_host);
+        at = str_chr(mpd_host,'@');
+        if(at == len) {
+            vis->mpd_host = mpd_host;
+        } else {
+            vis->mpd_host = mpd_host + at + 1;
+            if(at > 0) {
+                stralloc_cats(&vis->mpd_password,"password ");
+                stralloc_catb(&vis->mpd_password,mpd_host,at);
+                stralloc_catb(&vis->mpd_password,"\n",1);
+            }
+        }
     }
 
     if(vis->mpd_host[0] == '/') {
@@ -799,6 +954,45 @@ visualizer_setup_mpd(visualizer *vis) {
     }
     else {
         vis->mpd_port = mpd_port_uint;
+    }
+
+    if(ip46_scan(vis->mpd_host,&ip) > 0) {
+#ifdef DEBUG
+        ipstr[ip46_fmt(ipstr,&ip)] = 0;
+        buffer_puts(buffer_2,"Using IP: ");
+        buffer_puts(buffer_2,ipstr);
+        buffer_puts(buffer_2,"\n");
+        buffer_flush(buffer_2);
+#endif
+        if(!genalloc_copyb(ip46_t,&vis->iplist,&ip,1)) {
+            dienomem();
+        }
+    } else {
+        tain_t dl = TAIN_ZERO;
+        tain_t now = TAIN_ZERO;
+        tain_now(&now);
+        tain_addsec(&dl,&now,5);
+        if(resolve_dns(&(vis->iplist),vis->mpd_host) <= 0) {
+            strerr_die2x(1,"Unable to resolve hostname: ",vis->mpd_host);
+        }
+#ifdef DEBUG
+        {
+            buffer_puts(buffer_2,vis->mpd_host);
+            buffer_puts(buffer_2,": \n");
+            ip46_t *p = NULL;
+            unsigned int pi = 0;
+            memset(ipstr,0,IP46_FMT);
+            while(pi++ < genalloc_len(ip46_t,&(vis->iplist))) {
+                p = genalloc_s(ip46_t,&(vis->iplist)) + (pi -1);
+                ipstr[ip46_fmt(ipstr,p)] = 0;
+                buffer_puts(buffer_2,"  ");
+                buffer_puts(buffer_2,ipstr);
+                buffer_puts(buffer_2,"\n");
+            }
+            buffer_flush(buffer_2);
+        }
+
+#endif
     }
 
     return;
@@ -817,6 +1011,14 @@ visualizer_init(visualizer *vis) {
         !vis->bars ||
         !vis->input_fifo ||
         !vis->output_fifo ) return 0;
+
+    if(!s6dns_init()) {
+        strerr_die1sys(1,"Unable to init DNS: ");
+    }
+    if(!tain_init()) {
+        strerr_die1sys(1,"Unable to init timer: ");
+    }
+
 
     global_vis = vis;
 
@@ -1070,6 +1272,15 @@ visualizer_init(visualizer *vis) {
     if(vis->fds[3].fd > -1) {
       ndelay_off(vis->fds[3].fd);
       visualizer_process_mpd(vis); /* ok */
+
+      if(vis->mpd_password.len > 0) {
+        visualizer_process_mpd(vis); /* password */
+        visualizer_process_mpd(vis); /* password */
+      }
+
+      visualizer_process_mpd(vis); /* ping */
+      visualizer_process_mpd(vis); /* ping */
+
       visualizer_process_mpd(vis); /* subscribe */
       visualizer_process_mpd(vis); /* subscribe */
       visualizer_process_mpd(vis); /* status */
@@ -1129,12 +1340,16 @@ visualizer_loop(visualizer *vis) {
         case VIS_MPD_READ_STATUS:
         case VIS_MPD_READ_CURRENTSONG:
         case VIS_MPD_READ_MESSAGE:
-        case VIS_MPD_READ_SUBSCRIBE: vis->fds[3].events = IOPAUSE_READ; break;
+        case VIS_MPD_READ_SUBSCRIBE:
+        case VIS_MPD_READ_PASSWORD:
+        case VIS_MPD_READ_PING: vis->fds[3].events = IOPAUSE_READ; break;
         case VIS_MPD_SEND_IDLE:
         case VIS_MPD_SEND_STATUS:
         case VIS_MPD_SEND_CURRENTSONG:
         case VIS_MPD_SEND_MESSAGE:
-        case VIS_MPD_SEND_SUBSCRIBE: vis->fds[3].events = IOPAUSE_WRITE; break;
+        case VIS_MPD_SEND_SUBSCRIBE:
+        case VIS_MPD_SEND_PASSWORD:
+        case VIS_MPD_SEND_PING: vis->fds[3].events = IOPAUSE_WRITE; break;
     }
 
     events = iopause_stamp(vis->fds,4,NULL,NULL);

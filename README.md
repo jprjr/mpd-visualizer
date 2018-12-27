@@ -115,12 +115,23 @@ mpd-visualizer \
 ffmpeg -i pipe:0 -c:v libx264 -c:a aac -strict -2 -y some-file.mp4
 ```
 
+## Environment variables
+
+`mpd-visualizer` will connect to host `127.0.0.1` on port `6600` without a password.
+You can use the `MPD_HOST` and `MPD_PORT` environment variables to override this.
+
+* `MPD_HOST` -- used to connect to hosts besides `127.0.0.1`, or to UNIX sockets.
+    * To connect to a UNIX socket, use `MPD_HOST=/path/to/socket`
+    * To specify a password, use `MPD_HOST=password@hostname` or `MPD_HOST=password@/path/to/socket`
+* `MPD_PORT` -- used to specify a port other than `6600`, ignored if `MPD_HOST` is an absolute path
+
 ## Requirements
 
 * LuaJIT or Lua 5.3.
   * This may work with Lua 5.1 or Lua 5.2, so long as you have either Lua BitOp or Bit32, untested
 * [FFTW](http://www.fftw.org/)
 * [skalibs](http://skarnet.org/software/skalibs/)
+* [s6-dns](https://skarnet.org/software/s6-dns/)
 
 ## Installation
 
