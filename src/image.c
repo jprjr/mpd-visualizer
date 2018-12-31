@@ -124,7 +124,6 @@ stbi_xload(
 
     if (stbi__gif_test(&s))
     {
-        *channels = 4;
         int c;
         stbi__gif g;
         gif_result head;
@@ -166,7 +165,7 @@ stbi_xload(
 
         if (*frames > 1)
         {
-            unsigned int size = 4 * g.w * g.h;
+            unsigned int size = *channels * g.w * g.h;
             unsigned char *p = 0;
 
             result = (unsigned char*)stbi__malloc(*frames * (size + 2));
@@ -176,6 +175,9 @@ stbi_xload(
             while (gr)
             {
                 prev = gr;
+                if(*channels != 4) {
+                   gr->data = stbi__convert_format(gr->data, 4, 3, g.w, g.h);
+                }
                 memcpy(p, gr->data, size);
                 p += size;
                 *p++ = gr->delay & 0xFF;
