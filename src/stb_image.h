@@ -1,4 +1,4 @@
-/* stb_image - v2.16 - public domain image loader - http://nothings.org/stb_image.h
+/* stb_image - v2.17 - public domain image loader - http://nothings.org/stb_image.h
                                      no warranty implied; use at your own risk
 
    Do this:
@@ -48,6 +48,7 @@ LICENSE
 
 RECENT REVISION HISTORY:
 
+      2.17  (2018-01-29) bugfix
       2.16  (2017-07-23) all functions have 16-bit variants; optimizations; bugfixes
       2.15  (2017-03-18) fix png-1,2,4; all Imagenet JPGs; no runtime SSE detection on GCC
       2.14  (2017-03-03) remove deprecated STBI_JPEG_OLD; fixes for Imagenet JPGs
@@ -4963,21 +4964,27 @@ static int stbi__bitcount(unsigned int a)
    return a & 0xff;
 }
 
+// extract an arbitrarily-aligned N-bit value (N=bits)
+// from v, and then make it 8-bits long and fractionally
+// extend it to full full range.
 static int stbi__shiftsigned(int v, int shift, int bits)
 {
-   int result;
-   int z=0;
-
-   if (shift < 0) v <<= -shift;
-   else v >>= shift;
-   result = v;
-
-   z = bits;
-   while (z < 8) {
-      result += v >> z;
-      z += bits;
-   }
-   return result;
+   static unsigned int mul_table[9] = {
+      0,
+      0xff/*0b11111111*/, 0x55/*0b01010101*/, 0x49/*0b01001001*/, 0x11/*0b00010001*/,
+      0x21/*0b00100001*/, 0x41/*0b01000001*/, 0x81/*0b10000001*/, 0x01/*0b00000001*/,
+   };
+   static unsigned int shift_table[9] = {
+      0, 0,0,1,0,2,4,6,0,
+   };
+   if (shift < 0)
+      v <<= -shift;
+   else
+      v >>= shift;
+   assert(v >= 0 && v < 256);
+   v >>= (8-bits);
+   assert(bits >= 0 && bits <= 8);
+   return (int) ((unsigned) v * mul_table[bits]) >> shift_table[bits];
 }
 
 typedef struct
@@ -5240,12 +5247,10 @@ static int stbi__tga_get_comp(int bits_per_pixel, int is_grey, int* is_rgb16)
    switch(bits_per_pixel) {
       case 8:  return STBI_grey;
       case 16: if(is_grey) return STBI_grey_alpha;
-      /* fall through */
+            // else: fall-through
       case 15: if(is_rgb16) *is_rgb16 = 1;
             return STBI_rgb;
-      /* fall through */
-      case 24:
-      /* fall through */
+      case 24: // fall-through
       case 32: return bits_per_pixel/8;
       default: return 0;
    }
@@ -6971,6 +6976,7 @@ STBIDEF int stbi_info_from_callbacks(stbi_io_callbacks const *c, void *user, int
 
 /*
    revision history:
+      2.17  (2018-01-29) change sbti__shiftsigned to avoid clang -O2 bug
       2.16  (2017-07-23) all functions have 16-bit variants;
                          STBI_NO_STDIO works again;
                          compilation fixes;
