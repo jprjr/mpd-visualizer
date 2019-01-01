@@ -106,7 +106,8 @@ stbi_xload(
   unsigned int *width,
   unsigned int *height,
   unsigned int *channels,
-  unsigned int *frames) {
+  unsigned int *frames,
+  unsigned int **delays) {
 
     FILE *f;
     stbi__context s;
@@ -124,75 +125,13 @@ stbi_xload(
 
     if (stbi__gif_test(&s))
     {
-        int c;
-        stbi__gif g;
-        gif_result head;
-        gif_result *prev = 0, *gr = &head;
-
-        memset(&g, 0, sizeof(g));
-        memset(&head, 0, sizeof(head));
-
-        *frames = 0;
-
-        while ((gr->data = stbi__gif_load_next(&s, &g, &c, 4)))
-        {
-            if (gr->data == (unsigned char*)&s)
-            {
-                gr->data = 0;
-                break;
-            }
-
-            if (prev) prev->next = gr;
-            gr->delay = g.delay;
-            prev = gr;
-            gr = (gif_result*) stbi__malloc(sizeof(gif_result));
-            memset(gr, 0, sizeof(gif_result));
-            ++(*frames);
-        }
-
-        STBI_FREE(g.out);
-
-        if (gr != &head)
-            STBI_FREE(gr);
-
-        if (*frames > 0)
-        {
-            x = g.w;
-            y = g.h;
-        }
-
-        result = head.data;
-
-        if (*frames > 1)
-        {
-            unsigned int size = *channels * g.w * g.h;
-            unsigned char *p = 0;
-
-            result = (unsigned char*)stbi__malloc(*frames * (size + 2));
-            gr = &head;
-            p = result;
-
-            while (gr)
-            {
-                prev = gr;
-                if(*channels != 4) {
-                   gr->data = stbi__convert_format(gr->data, 4, 3, g.w, g.h);
-                }
-                memcpy(p, gr->data, size);
-                p += size;
-                *p++ = gr->delay & 0xFF;
-                *p++ = (gr->delay & 0xFF00) >> 8;
-                gr = gr->next;
-
-                STBI_FREE(prev->data);
-                if (prev != &head) STBI_FREE(prev);
-            }
-        }
+        result = stbi__load_gif_main(&s, (int **)delays, &x, &y, (int *)frames, &c, *channels);
     }
     else
     {
         result = stbi__load_main(&s, &x,&y, &c, *channels, &ri, 8);
         *frames = !!result;
+        *delays = 0;
     }
 
     if(result) {
@@ -224,6 +163,7 @@ image_load(
     unsigned int og_w = 0;
     unsigned int og_h = 0;
     unsigned int i = 0;
+    unsigned int *delays = NULL;
 
     if(image_probe(filename,width,height,channels) == 0) {
         return NULL;
@@ -233,11 +173,12 @@ image_load(
     oh = *height;
     oc = *channels;
 
-    t = stbi_xload(filename,&og_w,&og_h,channels,frames);
+    t = stbi_xload(filename,&og_w,&og_h,channels,frames,&delays);
 
     if(!t) {
         return NULL;
     }
+
     of = *frames;
 
     if(of > 1) {
@@ -261,11 +202,10 @@ image_load(
         flip_and_bgr(d,ow,oh,oc);
 
         if(of > 1) {
-            b += (og_w * og_h * oc);
             d += (ow * oh * oc);
-            memcpy(d,b,2);
-            b += 2;
-            d += 2;
+            *d++ = delays[i] & 0xFF;
+            *d++ = (delays[i] & 0xFF00) >> 8;
+            b += (og_w * og_h * oc);
         }
     }
 

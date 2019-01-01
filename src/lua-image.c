@@ -140,7 +140,6 @@ lua_load_image_cb(lua_State *L, intptr_t table_ref, unsigned int frames, uint8_t
           b += width * height * channels;
           delay = 0 + b[0];
           delay += b[1] << 8;
-          delay *= 10;
         }
         else {
             delay = 0;

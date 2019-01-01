@@ -280,7 +280,7 @@ local function load_image_mem_chunk(t_image,frames,img)
       ffi.C.memcpy(delay_one,chunk,1)
       chunk = chunk + 1
       ffi.C.memcpy(delay_two,chunk,1)
-      t_image.delays[i+1] = (delay_one[0] + lshift(delay_two[0],8)) * 10
+      t_image.delays[i+1] = (delay_one[0] + lshift(delay_two[0],8))
     else
       t_image.delays[i+1] = 0
     end
