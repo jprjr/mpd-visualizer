@@ -965,8 +965,8 @@ lua_image_stamp_image(lua_State *L) {
     xm -= mask_right;
     ym -= mask_bottom;
 
-    for(yii=1;yii <= ym; yii++) {
-        for(xii=1;xii <= xm; xii++) {
+    for(yii=yi;yii <= ym; yii++) {
+        for(xii=xi;xii <= xm; xii++) {
             xt = xii;
             yt = yii;
 
