@@ -88,8 +88,8 @@ image_mt_funcs.stamp_letter = function(self,font,codepoint,scale,x,y,r,g,b,hloff
   hroffset = hroffset or 0 -- "masks" the end pixels of the right of the string
   ytoffset = ytoffset or 0
   yboffset = yboffset or 0
-  local pixel_hroffset = font.widths[codepoint] * scale - hroffset
-  local pixel_yboffset = font.height * scale - yboffset
+  local pixel_hroffset = font.widths[codepoint] * scale - hroffset - 1
+  local pixel_yboffset = font.height * scale - yboffset - 1
   local xcc
   local ycc
 
