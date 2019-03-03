@@ -81,9 +81,11 @@ end
 image_mt_funcs.draw_rectangle_rgb = image_mt_funcs.draw_rectangle
 
 image_mt_funcs.stamp_letter = function(self,font,codepoint,scale,x,y,r,g,b,hloffset,hroffset,ytoffset,yboffset)
+
   if not font.widths[codepoint] then
     codepoint = 32
   end
+
   hloffset = hloffset or 0 -- "masks" the first pixels of the left of the string
   hroffset = hroffset or 0 -- "masks" the end pixels of the right of the string
   ytoffset = ytoffset or 0
@@ -179,6 +181,7 @@ image_mt_funcs.stamp_string = function(self,font,str,scale,x,y,r,g,b,max,lmask,r
   bmask = bmask * scale
 
   local codepoints = font.utf8_to_table(str)
+
   local xi = x
   for _,codepoint in ipairs(codepoints) do
     if not font.widths[codepoint] then
@@ -196,6 +199,7 @@ image_mt_funcs.stamp_string = function(self,font,str,scale,x,y,r,g,b,max,lmask,r
         rmask,tmask,bmask)
       if lmask_applied == false then
         lmask_applied = true
+        lmask = 0
       end
     end
   end
