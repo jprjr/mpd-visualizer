@@ -365,11 +365,11 @@ For convenience, most `frame` functions can be used on the `stream` object direc
   * `rmask` - mask the string by this many pixels on the right (after scaling)
 * `frame:stamp_string_hsl(font,str,scale,x,y,h,s,l,max,lmask,rmask)`
   * same as `stamp_string`, but with hue, saturation, and lightness values instead of red, green, and blue
-* `frame:stamp_string_adv(str,props)`
+* `frame:stamp_string_adv(str,props,userdata)`
   * renders `str` on top of the `frame`
   * `props` can be a table of per-frame properties, or a function
   * in the case of a table, you need frame 1 defined at a minimum
-  * in the case of a function, the function will receive two arguments - the index, and the current properties (may be nil)
+  * in the case of a function, the function will receive three arguments - the index, and the current properties (may be nil), and the `userdata` value
 * `frame:stamp_letter(font,codepoint,scale,x,y,r,g,b,lmask,rmask,tmask,bmask)`
   * renders an individual letter
   * the letter is a UTF-8 codepoint, NOT a character. Ie, 'A' is 65

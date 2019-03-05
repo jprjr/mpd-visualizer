@@ -130,7 +130,7 @@ local string_props = {
   'bmask',
 }
 
-image_mt_funcs.stamp_string_adv = function(self, str, props)
+image_mt_funcs.stamp_string_adv = function(self, str, props, userd)
   local p
   local tp = type(props)
 
@@ -140,7 +140,7 @@ image_mt_funcs.stamp_string_adv = function(self, str, props)
     if tp == 'table' then
       ap = props[i]
     elseif tp == 'function' then
-      ap = props(i,p)
+      ap = props(i,p,userd)
     else
       return false, nil
     end
