@@ -34,6 +34,12 @@ int main(int argc, char const *const *argv) {
     visualizer _vis = VISUALIZER_ZERO;
     visualizer *vis = &_vis;
 
+    struct {
+        void (*set_image_cb)();
+    } a_bunch_of_pointers;
+
+    a_bunch_of_pointers.set_image_cb = visualizer_set_image_cb;
+
     char opt = 0;
     unsigned int totaltime = 0;
 
