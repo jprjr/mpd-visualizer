@@ -2,6 +2,7 @@
 #include "lua-image.h"
 #include "image.lua.lh"
 #include "thread.h"
+#include "visualizer.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -1115,7 +1116,13 @@ int luaopen_image(lua_State *L) {
         strerr_die2x(1,"Error loading image.lua: ",lua_tostring(L,-1));
     }
 
-    if(lua_pcall(L,0,0,0)) {
+    lua_pushlightuserdata(L,queue_image_load);
+    lua_pushlightuserdata(L,image_probe);
+    lua_pushlightuserdata(L,image_load);
+    lua_pushlightuserdata(L,image_blend);
+    lua_pushlightuserdata(L,visualizer_set_image_cb);
+
+    if(lua_pcall(L,5,0,0)) {
         strerr_die2x(1,"Error running image.lua: ",lua_tostring(L,-1));
     }
 
