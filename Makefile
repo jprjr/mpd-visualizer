@@ -32,13 +32,14 @@ LIBSRCS = \
   src/video.c \
   src/visualizer.c
 
-LIBOBJS = \
+OBJS = \
   src/audio.o \
   src/avi_header.o \
   src/image.o \
   src/lua-audio.o \
   src/lua-file.o \
   src/lua-image.o \
+  src/main.o \
   src/ringbuf.o \
   src/thread.o \
   src/video.o \
@@ -55,8 +56,8 @@ BIN2CSRC = src/bin2c.c
 
 all: mpd-visualizer
 
-mpd-visualizer: src/libvisualizer.a src/main.c
-	$(CC) $(CFLAGS) -o mpd-visualizer src/main.c -Lsrc -rdynamic -lvisualizer $(LDFLAGS) -pthread
+mpd-visualizer: $(OBJS)
+	$(CC) -o mpd-visualizer $(OBJS) $(LDFLAGS) -pthread
 
 src/%.o: src/%.c $(LUALHS)
 	$(CC) $(CFLAGS) -o $@ -c $<
@@ -64,14 +65,11 @@ src/%.o: src/%.c $(LUALHS)
 src/%.lh: lua/% src/bin2c
 	./src/bin2c $< $@ $(patsubst %.lua,%_lua,$(notdir $<))
 
-src/libvisualizer.a: $(LIBOBJS)
-	$(AR) rcs $@ $^
-
 src/bin2c: src/bin2c.c
 	$(HOSTCC) -o src/bin2c src/bin2c.c
 
 clean:
-	rm -f mpd-visualizer src/libvisualizer.a src/bin2c $(LIBOBJS) $(LUALHS)
+	rm -f mpd-visualizer src/libvisualizer.a src/bin2c $(OBJS) $(LUALHS)
 
 dist:
 	rm -rf dist/mpd-visualizer-$(VERSION)
