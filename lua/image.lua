@@ -244,15 +244,15 @@ void *
 memcpy(void *dst, void *src, size_t n);
 ]]
 
-local queue_image_load = ffi.typeof("void (*)(intptr_t table_ref,const char* filename, unsigned int width, unsigned int height, unsigned int channels)")(args[0])
+local queue_image_load = ffi.typeof("void (*)(intptr_t table_ref,const char* filename, unsigned int width, unsigned int height, unsigned int channels)")(args[1])
 
-local image_probe = ffi.typeof("int (*)(const char *filename, unsigned int *width, unsigned int *height, unsigned int *channels)")(args[1])
+local image_probe = ffi.typeof("int (*)(const char *filename, unsigned int *width, unsigned int *height, unsigned int *channels)")(args[2])
 
-local image_load = ffi.typeof("uint8_t* (*)(const char *filename, unsigned int *width, unsigned int *height, unsigned int *channels, unsigned int *frames)")(args[2])
+local image_load = ffi.typeof("uint8_t* (*)(const char *filename, unsigned int *width, unsigned int *height, unsigned int *channels, unsigned int *frames)")(args[3])
 
-local image_blend = ffi.typeof("void (*)(uint8_t *dst, uint8_t *src, unsigned int len, uint8_t a)")(args[3])
+local image_blend = ffi.typeof("void (*)(uint8_t *dst, uint8_t *src, unsigned int len, uint8_t a)")(args[4])
 
-local visualizer_set_image_cb = ffi.typeof("void (*)(void (*lua_image_cb)(void *L, intptr_t table_ref, unsigned int frames, uint8_t *image))")(args[4])
+local visualizer_set_image_cb = ffi.typeof("void (*)(void (*lua_image_cb)(void *L, intptr_t table_ref, unsigned int frames, uint8_t *image))")(args[5])
 
 local to_uint = ffi.typeof("uint8_t *")
 
