@@ -28,7 +28,7 @@
                "  -T totaltime (in seconds)\n"
 
 #define dieusage() strerr_die1x(1, USAGE)
-#define diemem() strerr_die1x(1, "Unable to malloc memory")
+#define diemem() strerr_die1x(1, "error: out of memory")
 
 int main(int argc, char const *const *argv) {
     visualizer _vis = VISUALIZER_ZERO;

@@ -261,11 +261,11 @@ audio_processor_init(audio_processor *processor) {
       (1.0f / ((double)processor->spectrum_len + 1.0f) - 1.0f);
 
     if(processor->channels > 2) {
-        strerr_warn1x("Too many channels, max is 2");
+        strerr_warn1x("error: too many channels, max is 2");
         return 0;
     }
     if(processor->samplesize > 3) {
-        strerr_warn1x("Too big sample size, max is 3");
+        strerr_warn1x("error: too big sample size, max is 3");
         return 0;
     }
 

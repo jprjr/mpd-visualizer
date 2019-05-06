@@ -171,7 +171,7 @@ queue_image_load(intptr_t table_ref,const char* filename, unsigned int width, un
     image_q *q = (image_q *)malloc(sizeof(image_q));
 
     if(q == NULL) {
-        strerr_die1x(1,"Unable to malloc memory for queue");
+        strerr_die1x(1,"error: unable to malloc memory for queue");
     }
 
     q->filename = malloc(strlen(filename) + 1);
@@ -1112,11 +1112,11 @@ int luaopen_image(lua_State *L) {
     lua_setglobal(L,"image");
 
     if(luaL_loadbuffer(L,image_lua,image_lua_length-1,"image.lua")) {
-        strerr_die2x(1,"Error loading image.lua: ",lua_tostring(L,-1));
+        strerr_die2x(1,"error: ",lua_tostring(L,-1));
     }
 
     if(lua_pcall(L,0,0,0)) {
-        strerr_die2x(1,"Error running image.lua: ",lua_tostring(L,-1));
+        strerr_die2x(1,"error: ",lua_tostring(L,-1));
     }
 
     return 0;

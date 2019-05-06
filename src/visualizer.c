@@ -32,7 +32,7 @@
 #define func_list_free(g) genalloc_free(lua_func_list,g)
 #define func_list_append(g, p) genalloc_append(lua_func_list,g, p)
 
-#define dienomem() strerr_die1x(1,"Out of memory!")
+#define dienomem() strerr_die1x(1,"error: out of memory")
 
 static visualizer *global_vis;
 
@@ -191,12 +191,12 @@ visualizer_load_scripts(visualizer *vis) {
         }
 
         if(luaL_loadfile(vis->Lua,file.path)) {
-            strerr_warn4x("Failed to load ",file.path, ": ",lua_tostring(vis->Lua,-1));
+            strerr_warn2x("warning: ",lua_tostring(vis->Lua,-1));
             lua_settop(vis->Lua,0);
             continue;
         }
         if(lua_pcall(vis->Lua,0,1,0)) {
-            strerr_warn4x("Failed to run ",file.path, ": ",lua_tostring(vis->Lua,-1));
+            strerr_warn2x("warning: ",lua_tostring(vis->Lua,-1));
             lua_settop(vis->Lua,0);
             continue;
         }
@@ -233,7 +233,7 @@ visualizer_load_scripts(visualizer *vis) {
             lua_getfield(vis->Lua,-1,"onload");
             if(lua_isfunction(vis->Lua,-1) && cur->mtime == -1) {
                 if(lua_pcall(vis->Lua,0,0,0)) {
-                    strerr_warn4x("Error calling ",file.path,":onload, ",lua_tostring(vis->Lua,-1));
+                    strerr_warn2x("warning: ",lua_tostring(vis->Lua,-1));
                 }
             }
             else {
@@ -243,7 +243,7 @@ visualizer_load_scripts(visualizer *vis) {
             if(cur->reload_ref != -1 && cur->mtime != -1) {
                 lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,cur->reload_ref);
                 if(lua_pcall(vis->Lua,0,0,0)) {
-                    strerr_warn4x("Error calling ",file.path,"onreload, ",lua_tostring(vis->Lua,-1));
+                    strerr_warn2x("warning: ",lua_tostring(vis->Lua,-1));
                 }
             }
             cur->mtime = st.st_mtime;
@@ -289,7 +289,7 @@ visualizer_grab_audio(visualizer *vis, int fd) {
 
     bytes_read = ringbuf_read(fd,vis->processor.samples,ringbuf_bytes_free(vis->processor.samples));
     if(bytes_read <= 0) {
-        strerr_warn1sys("Problem grabbing audio data: ");
+        strerr_warn1sys("warning: problem grabbing audio data: ");
         return -1;
     }
 
@@ -320,13 +320,13 @@ visualizer_connect_mpd(visualizer *vis) {
     if(vis->mpd_host[0] == '/') {
         vis->fds[3].fd = ipc_stream_nb();
         if(vis->fds[3].fd == -1) {
-            strerr_warn1sys("Unable to open socket: ");
+            strerr_warn1sys("error: unable to open socket: ");
             return -1;
         }
 
         r = ipc_connect(vis->fds[3].fd,vis->mpd_host);
         if(r == -1 && errno != EINPROGRESS) {
-            strerr_warn1sys("Unable to connect to socket: ");
+            strerr_warn1sys("error: unable to connect to socket: ");
             return -1;
         }
     } else {
@@ -355,19 +355,20 @@ visualizer_connect_mpd(visualizer *vis) {
             }
             vis->fds[3].fd = ip46_is6(ip) ? socket_tcp6_nb() : socket_tcp4_nb();
             if(vis->fds[3].fd == -1) {
-                strerr_warn1sys("Unable to open socket: ");
+                strerr_warn1sys("warning: unable to open socket: ");
                 continue;
             }
 
             r = socket_connect46(vis->fds[3].fd,ip,vis->mpd_port);
             if(r == -1 && errno != EINPROGRESS) {
-                strerr_warn1sys("Unable to connect to ip: ");
+                strerr_warn1sys("warning: unable to connect to ip: ");
                 continue;
             }
             connected = 1;
             break;
         }
         if(connected == 0) {
+            strerr_warn1x("error: unable to connect to mpd");
             return -1;
         }
     }
@@ -422,12 +423,12 @@ visualizer_mpd_ok(visualizer *vis) {
     }
 
     if(case_starts(d,"ack")) {
-        strerr_die2x(1,"MPD returned error: ",d);
+        strerr_die2x(1,"error: MPD returned ",d);
     }
 
     if(!case_starts(d,"ok")) {
         /* we have a full line but no OK message? bail. */
-        strerr_die2x(1,"Connected, expected OK MPD but received: ",d);
+        strerr_die2x(1,"error: expected OK MPD but received: ",d);
     }
 
     if(case_starts(d,"ok mpd ")) {
@@ -450,7 +451,7 @@ visualizer_mpd_ok(visualizer *vis) {
         mpd_major[uint32_fmt(mpd_major,vis->mpd_major)] = 0;
         mpd_minor[uint32_fmt(mpd_minor,vis->mpd_minor)] = 0;
         mpd_patch[uint32_fmt(mpd_patch,vis->mpd_patch)] = 0;
-        strerr_warn6x("Connected to MPD ",mpd_major,".",mpd_minor,".",mpd_patch);
+        strerr_warn6x("info: connected to MPD ",mpd_major,".",mpd_minor,".",mpd_patch);
 #endif
     }
 
@@ -476,7 +477,7 @@ visualizer_mpd_idle(visualizer *vis) {
         if(!d[i+k]) break;
 
         if(case_starts(d,"ack")) {
-            strerr_die2x(1,"MPD returned error: ",d);
+            strerr_die2x(1,"error: MPD returned ",d);
         }
 
         if(case_starts(d+i,"ok")) {
@@ -532,7 +533,7 @@ visualizer_mpd_status(visualizer *vis) {
         if(!d[i+k]) break;
 
         if(case_starts(d,"ack")) {
-            strerr_die2x(1,"MPD returned error: ",d);
+            strerr_die2x(1,"error: MPD returned ",d);
         }
 
         if(case_starts(d+i,"ok")) {
@@ -643,7 +644,7 @@ visualizer_mpd_currentsong(visualizer *vis) {
         if(!d[i+k]) break;
 
         if(case_starts(d,"ack")) {
-            strerr_die2x(1,"MPD returned error: ",d);
+            strerr_die2x(1,"error: MPD returned ",d);
         }
 
         if(case_starts(d+i,"ok")) {
@@ -719,7 +720,7 @@ visualizer_mpd_message(visualizer *vis) {
 
     for(i=0; i<len; i+= str_chr(d+i,'\n')+1) {
         if(case_starts(d,"ack")) {
-            strerr_die2x(1,"MPD returned error: ",d);
+            strerr_die2x(1,"error: MPD returned ",d);
         }
 
         if(case_starts(d+i,"ok")) {
@@ -761,7 +762,7 @@ visualizer_send_mpd(visualizer *vis, char *cmd, int len) {
 #endif
     int r = fd_send(vis->fds[3].fd,cmd,len,0);
     if(r != len) {
-        strerr_die1sys(1,"Error sending to MPD: ");
+        strerr_die1sys(1,"error: tried to send to MPD: ");
     }
     vis->mpd_state = ringbuf_qget(vis->mpd_q);
 }
@@ -777,7 +778,7 @@ visualizer_process_mpd(visualizer *vis) {
 
           if(bytes_read <= 0 && errno != EINPROGRESS) {
               if(vis->mpd_major == 0 && vis->mpd_minor == 0 && vis->mpd_patch == 0) {
-                  strerr_die1sys(1,"Error connecting to MPD: ");
+                  strerr_die1sys(1,"error: tried to connect to MPD: ");
               }
               visualizer_connect_mpd(vis);
           }
@@ -853,7 +854,7 @@ visualizer_make_frames(visualizer *vis) {
                 lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,func_list_s(&(vis->lua_funcs))[i].frame_ref);
                 if(lua_isfunction(vis->Lua,-1)) {
                     if(lua_pcall(vis->Lua,0,0,0)) {
-                        strerr_warn3x(func_list_s(&(vis->lua_funcs))[i].filename.s,": ",lua_tostring(vis->Lua,-1));
+                        strerr_warn2x("error: ",lua_tostring(vis->Lua,-1));
                     }
                 }
             }
@@ -878,19 +879,19 @@ int
 visualizer_reload(visualizer *vis) {
     vis->fds[0].fd = selfpipe_init();
     if(selfpipe_trap(SIGINT) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGINT: ");
+        strerr_die1sys(1,"error: unable to trap SIGINT: ");
     }
     if(selfpipe_trap(SIGTERM) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGTERM: ");
+        strerr_die1sys(1,"error: unable to trap SIGTERM: ");
     }
     if(selfpipe_trap(SIGPIPE) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGPIPE: ");
+        strerr_die1sys(1,"error: unable to trap SIGPIPE: ");
     }
     if(selfpipe_trap(SIGUSR1) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGUSR1: ");
+        strerr_die1sys(1,"error: unable to trap SIGUSR1: ");
     }
     if(selfpipe_trap(SIGUSR2) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGUSR2: ");
+        strerr_die1sys(1,"error: unable to trap SIGUSR2: ");
     }
     global_vis = vis;
     luaimage_setup_threads(&(vis->image_queue));
@@ -973,7 +974,7 @@ visualizer_setup_mpd(visualizer *vis) {
         tain_now(&now);
         tain_addsec(&dl,&now,5);
         if(resolve_dns(&(vis->iplist),vis->mpd_host) <= 0) {
-            strerr_die2x(1,"Unable to resolve hostname: ",vis->mpd_host);
+            strerr_die2x(1,"error: unable to resolve hostname ",vis->mpd_host);
         }
 #ifdef DEBUG
         {
@@ -1013,10 +1014,10 @@ visualizer_init(visualizer *vis) {
         !vis->output_fifo ) return 0;
 
     if(!s6dns_init()) {
-        strerr_die1sys(1,"Unable to init DNS: ");
+        strerr_die1sys(1,"error: unable to init DNS: ");
     }
     if(!tain_init()) {
-        strerr_die1sys(1,"Unable to init timer: ");
+        strerr_die1sys(1,"error: unable to init timer: ");
     }
 
 
@@ -1043,7 +1044,7 @@ visualizer_init(visualizer *vis) {
         vis->samplerate,
         vis->channels,
         vis->samplesize)) {
-        strerr_warn1x("Error initializing AVI stream");
+        strerr_warn1x("error: unable to initialize AVI stream");
         return visualizer_free(vis);
     }
 
@@ -1054,7 +1055,7 @@ visualizer_init(visualizer *vis) {
     vis->processor.spectrum_len = vis->bars;
 
     if(!audio_processor_init(&(vis->processor))) {
-        strerr_warn1x("Error initializing audio processor");
+        strerr_warn1x("error: unable to initialize audio processor");
         return visualizer_free(vis);
     }
 
@@ -1072,29 +1073,29 @@ visualizer_init(visualizer *vis) {
     vis->fds[0].events = IOPAUSE_READ | IOPAUSE_EXCEPT;
 
     if(vis->fds[0].fd < 0) {
-        strerr_die1sys(1,"Unable to create selfpipe");
+        strerr_die1sys(1,"error: unable to create selfpipe");
     }
     if(selfpipe_trap(SIGINT) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGINT: ");
+        strerr_die1sys(1,"error: unable to trap SIGINT: ");
     }
     if(selfpipe_trap(SIGTERM) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGTERM: ");
+        strerr_die1sys(1,"error: unable to trap SIGTERM: ");
     }
     if(selfpipe_trap(SIGPIPE) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGPIPE: ");
+        strerr_die1sys(1,"error: unable to trap SIGPIPE: ");
     }
     if(selfpipe_trap(SIGUSR1) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGUSR1: ");
+        strerr_die1sys(1,"error: unable to trap SIGUSR1: ");
     }
     if(selfpipe_trap(SIGUSR2) < 0) {
-        strerr_die1sys(1,"Unable to trap SIGUSR2: ");
+        strerr_die1sys(1,"error: unable to trap SIGUSR2: ");
     }
 
 
     vis->Lua = 0;
     vis->Lua = luaL_newstate();
     if(!vis->Lua) {
-        strerr_warn1x("Error loading Lua");
+        strerr_warn1x("error: unable to load Lua");
         visualizer_free(vis);
         return 0;
     }
@@ -1104,11 +1105,11 @@ visualizer_init(visualizer *vis) {
     luaopen_file(vis->Lua);
 
     if(luaL_loadbuffer(vis->Lua,font_lua,font_lua_length-1,"font.lua")) {
-        strerr_die2x(1,"Error loading font.lua: ",lua_tostring(vis->Lua,-1));
+        strerr_die2x(1,"error: ",lua_tostring(vis->Lua,-1));
     }
 
     if(lua_pcall(vis->Lua,0,1,0)) {
-        strerr_die2x(1,"Error running font.lua: ",lua_tostring(vis->Lua,-1));
+        strerr_die2x(1,"error: ",lua_tostring(vis->Lua,-1));
     }
 
     lua_setglobal(vis->Lua,"font");
@@ -1148,7 +1149,7 @@ visualizer_init(visualizer *vis) {
     lua_pushinteger(vis->Lua,vis->video_height);
     lua_pushinteger(vis->Lua,3);
     if(lua_pcall(vis->Lua,4,1,0)) {
-        strerr_die2x(1,"Error creating stream image: ",lua_tostring(vis->Lua,-1));
+        strerr_die2x(1,"error: ",lua_tostring(vis->Lua,-1));
     }
 
     lua_getfield(vis->Lua,-1,"frames");
@@ -1171,32 +1172,32 @@ visualizer_init(visualizer *vis) {
     lua_settop(vis->Lua,0);
 
     if(luaL_loadbuffer(vis->Lua,stream_lua,stream_lua_length - 1,"stream.lua")) {
-        strerr_die2x(1,"Error loading stream.lua: ",lua_tostring(vis->Lua,-1));
+        strerr_die2x(1,"error: ",lua_tostring(vis->Lua,-1));
     }
 
     if(lua_pcall(vis->Lua,0,0,0)) {
-        strerr_die2x(1,"Error calling stream.lua: ",lua_tostring(vis->Lua,-1));
+        strerr_die2x(1,"error: ",lua_tostring(vis->Lua,-1));
     }
 
     if(vis->lua_folder) {
         if(!stralloc_cats(&realpath_lua,"package.path = '")) {
-            strerr_warn1x("Out of memory!");
+            strerr_warn1x("error: out of memory");
             visualizer_free(vis);
             return -1;
         }
         if(sarealpath(&realpath_lua,vis->lua_folder) != -1) {
             if(!stralloc_cats(&realpath_lua,"/?.lua;' .. package.path")) {
-                strerr_warn1x("Out of memory!");
+                strerr_warn1x("error: out of memory");
                 visualizer_free(vis);
                 return -1;
             }
             if(!stralloc_0(&realpath_lua)) {
-                strerr_warn1x("Out of memory!");
+                strerr_warn1x("error: out of memory");
                 visualizer_free(vis);
                 return -1;
             }
             if(luaL_dostring(vis->Lua,realpath_lua.s) != 0) {
-                strerr_warn2x("Error setting lua package.path: ",lua_tostring(vis->Lua,-1));
+                strerr_warn2x("error: ",lua_tostring(vis->Lua,-1));
                 visualizer_free(vis);
                 return -1;
             }
@@ -1214,7 +1215,7 @@ visualizer_init(visualizer *vis) {
         if(vis->own_fifo < 0) {
             if(stat(vis->output_fifo,&st) == 0) {
                 if(!S_ISFIFO(st.st_mode)) {
-                    strerr_die3x(1,"Output path ",vis->output_fifo," exists and is not a fifo");
+                    strerr_die3x(1,"error: output path ",vis->output_fifo," exists and is not a fifo");
                 }
                 else {
                     vis->own_fifo = 0;
@@ -1230,7 +1231,7 @@ visualizer_init(visualizer *vis) {
         vis->own_fifo = 0;
         if(vis->argc) {
             if(child_spawn1_pipe(vis->argv[0], vis->argv, (char const *const *)environ, &(vis->fds[2].fd), 0) <= 0) {
-                strerr_die1x(1,"Problem spawning child process");
+                strerr_die1x(1,"error: unable to spawn child process");
             }
         }
         else {
@@ -1242,13 +1243,13 @@ visualizer_init(visualizer *vis) {
     }
 
     if(vis->own_fifo < 0) {
-        strerr_die3x(1,"Problem opening ", vis->output_fifo," for file writing");
+        strerr_die3x(1,"error: unable to open ", vis->output_fifo," for writing");
     }
 
     if(strcmp(vis->input_fifo,"-") != 0) {
         vis->fds[1].fd = open_read(vis->input_fifo);
         if(vis->fds[1].fd == -1) {
-            strerr_die3sys(1,"Problem opening ",vis->input_fifo,": ");
+            strerr_die3sys(1,"error: unable to open ",vis->input_fifo,": ");
         }
         ndelay_on(vis->fds[1].fd);
         fd_close(fileno(stdin));
@@ -1264,7 +1265,6 @@ visualizer_init(visualizer *vis) {
 
     visualizer_setup_mpd(vis);
     if(visualizer_connect_mpd(vis) == -1) {
-        strerr_warn1x("Error connecting to MPD");
         visualizer_free(vis);
         return -1;
     }
@@ -1360,11 +1360,11 @@ visualizer_loop(visualizer *vis) {
             case SIGINT:
             /* fall through */
             case SIGTERM:
-                strerr_warn1x("Caught INT/TERM, exiting");
+                strerr_warn1x("warning: caught INT/TERM, exiting");
                 return -1;
                 break;
             case SIGUSR1: {
-                strerr_warn1x("Reloading images/scripts");
+                strerr_warn1x("info: eeloading images/scripts");
                 visualizer_load_scripts(vis);
                 break;
 
@@ -1392,13 +1392,13 @@ visualizer_loop(visualizer *vis) {
 
     if(events && vis->fds[1].revents & IOPAUSE_READ) {
         if(visualizer_grab_audio(vis,vis->fds[1].fd) < 0) {
-            strerr_warn1x("grab_audio returned <= 0, exiting");
+            strerr_warn1x("warning: no audio data received");
             return -1;
         }
     }
 
     if(events && vis->fds[1].revents & IOPAUSE_EXCEPT) {
-        strerr_warn1sys("exception/error on input pipe/fifo: ");
+        strerr_warn1sys("warning on input: ");
         return -1;
     }
 
@@ -1410,7 +1410,7 @@ visualizer_loop(visualizer *vis) {
         vis->fds[2].events = 0;
         vis->stream.output_frame_rem = 0;
         if(strcmp(vis->output_fifo,"-") == 0) {
-            strerr_warn1x("output pipe closed, exiting");
+            strerr_warn1x("warning: output pipe closed, exiting");
             return -1;
         }
         vis->fds[2].fd = -1;

@@ -60,13 +60,13 @@ avi_stream_init(
     if( (width * 3) % 4 != 0) {
         uint_fmt(width_str,width);
         doit = 0;
-        strerr_warn3x("avi_stream_new: bad width ",width_str,", (width * 3) / 4 must be a whole number");
+        strerr_warn3x("error: bad width ",width_str,", (width * 3) / 4 must be a whole number");
     }
 
     if( (height * 3) % 4 != 0) {
         uint_fmt(height_str,height);
         doit = 0;
-        strerr_warn3x("avi_stream_new: bad height ",height_str,", (height * 3) / 4 must be a whole number");
+        strerr_warn3x("error: bad height ",height_str,", (height * 3) / 4 must be a whole number");
     }
 
     if(!doit) {
