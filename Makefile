@@ -1,6 +1,8 @@
-.PHONY: all clean debug profile
+.PHONY: all clean debug profile dist
 .SUFFIXES:
 .PRECIOUS: src/%.lh src/%.o
+
+VERSION = 2.1.0
 
 include config.mak.dist
 -include config.mak
@@ -71,3 +73,20 @@ src/bin2c: src/bin2c.c
 clean:
 	rm -f mpd-visualizer src/libvisualizer.a src/bin2c $(LIBOBJS) $(LUALHS)
 
+dist:
+	rm -rf dist/mpd-visualizer-$(VERSION)
+	rm -rf dist/mpd-visualizer-$(VERSION).tar.gz
+	rm -rf dist/mpd-visualizer-$(VERSION).tar.xz
+	mkdir -p dist/mpd-visualizer-$(VERSION)
+	cp -r demos dist/mpd-visualizer-$(VERSION)/demos
+	cp -r gifs dist/mpd-visualizer-$(VERSION)/gifs
+	cp -r lua dist/mpd-visualizer-$(VERSION)/lua
+	cp -r src dist/mpd-visualizer-$(VERSION)/src
+	cp LICENSE dist/mpd-visualizer-$(VERSION)/LICENSE
+	cp LICENSE.ringbuf dist/mpd-visualizer-$(VERSION)/LICENSE.ringbuf
+	cp Makefile dist/mpd-visualizer-$(VERSION)/Makefile
+	cp README.md dist/mpd-visualizer-$(VERSION)/README.md
+	cp config.mak.dist dist/mpd-visualizer-$(VERSION)/config.mak.dist
+	tar cvf dist/mpd-visualizer-$(VERSION).tar dist/mpd-visualizer-$(VERSION)
+	gzip -k dist/mpd-visualizer-$(VERSION).tar
+	xz dist/mpd-visualizer-$(VERSION).tar
