@@ -91,7 +91,7 @@ avi_stream_init(
     stream->audio_frame = stream->audio_frame_header + 8;
     memset(stream->input_frame,0,stream->frame_len);
 
-    stream->frames = ringbuf_new(framerate * stream->frame_len);
+    stream->frames = ringbuf_new(framerate * stream->frame_len, NULL, NULL, NULL, NULL);
     if(!stream->frames) {
         return avi_stream_free(stream);
     }

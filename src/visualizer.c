@@ -26,13 +26,13 @@
 #include "lua-file.h"
 #include "ringbuf.h"
 
-
 #define func_list_len(g) genalloc_len(lua_func_list,g)
 #define func_list_s(g) genalloc_s(lua_func_list,g)
 #define func_list_free(g) genalloc_free(lua_func_list,g)
 #define func_list_append(g, p) genalloc_append(lua_func_list,g, p)
 
 #define dienomem() strerr_die1x(1,"error: out of memory")
+#define VIS_MIN(a,b) ( a < b ? a : b )
 
 static visualizer *global_vis;
 
@@ -63,26 +63,26 @@ typedef struct lua_func_list {
 extern "C" {
 #endif
 
-static inline ssize_t
-vis_ringbuf_write(int fd, ringbuf_t rb, size_t count)
+static size_t visualizer_decode_audio_raw(visualizer *vis) {
+    /* no conversions or anything, we can just copy right into the audio processor sample buffer */
+    ringbuf_copy(
+      vis->processor.samples,
+      vis->rawaudio_buf,
+      VIS_MIN(ringbuf_bytes_free(vis->processor.samples),ringbuf_bytes_used(vis->rawaudio_buf)));
+    vis->processor.samples_available = ringbuf_bytes_used(vis->processor.samples) / (vis->processor.channels * vis->processor.samplesize);
+    return vis->processor.samples_available;
+}
+
+static size_t fd_read_wrapper(uint8_t *dest, size_t count, void *ctx)
 {
-    size_t bytes_used = ringbuf_bytes_used(rb);
-    if (count > bytes_used)
-        return 0;
+    int *fd = ctx;
+    return fd_read(*fd,(char *)dest,count);
+}
 
-    const uint8_t *bufend = ringbuf_end(rb);
-    count = MIN((unsigned)(bufend - rb->tail), count);
-    ssize_t n = fd_write(fd, (char *)rb->tail, count);
-    if (n > 0) {
-        rb->tail += n;
-
-        /* wrap? */
-        if (rb->tail == bufend)
-            rb->tail = rb->buf;
-
-    }
-
-    return n;
+static size_t fd_write_wrapper(uint8_t *src, size_t count, void *ctx)
+{
+    int *fd = ctx;
+    return fd_write(*fd, (char *)src, count);
 }
 
 static inline int
@@ -274,6 +274,8 @@ visualizer_free(visualizer *vis) {
     audio_processor_free(&(vis->processor));
     s6dns_finish();
 
+    if(vis->rawaudio_buf) ringbuf_free(&(vis->rawaudio_buf));
+
     if(vis->mpd_q) ringbuf_free(&(vis->mpd_q));
     if(vis->mpd_buf) ringbuf_free(&(vis->mpd_buf));
     if(vis->Lua) {
@@ -284,18 +286,16 @@ visualizer_free(visualizer *vis) {
 }
 
 static inline int
-visualizer_grab_audio(visualizer *vis, int fd) {
+visualizer_grab_audio(visualizer *vis) {
     int bytes_read = 0;
 
-    bytes_read = ringbuf_read(fd,vis->processor.samples,ringbuf_bytes_free(vis->processor.samples));
+    bytes_read = ringbuf_read(vis->rawaudio_buf,ringbuf_bytes_free(vis->rawaudio_buf));
     if(bytes_read <= 0) {
         strerr_warn1sys("warning: problem grabbing audio data: ");
         return -1;
     }
 
-    vis->processor.samples_available = ringbuf_bytes_used(vis->processor.samples) / (vis->processor.channels * vis->processor.samplesize);
-
-    return vis->processor.samples_available;
+    return visualizer_decode_audio_raw(vis);
 }
 
 static int
@@ -1059,12 +1059,18 @@ visualizer_init(visualizer *vis) {
         return visualizer_free(vis);
     }
 
-    vis->mpd_q = ringbuf_new(100);
+    vis->rawaudio_buf = ringbuf_new(1024 * 1024, fd_read_wrapper, &(vis->fds[1].fd), NULL, NULL);
+
+    if(!vis->rawaudio_buf) {
+        return visualizer_free(vis);
+    }
+
+    vis->mpd_q = ringbuf_new(100, NULL, NULL, NULL, NULL);
     if(!vis->mpd_q) {
         return visualizer_free(vis);
     }
 
-    vis->mpd_buf = ringbuf_new(4096);
+    vis->mpd_buf = ringbuf_new(4096, NULL, NULL, NULL, NULL);
     if(!vis->mpd_buf) {
         return visualizer_free(vis);
     }
@@ -1246,6 +1252,9 @@ visualizer_init(visualizer *vis) {
         strerr_die3x(1,"error: unable to open ", vis->output_fifo," for writing");
     }
 
+    vis->stream.frames->write_context = &(vis->fds[2].fd);
+    vis->stream.frames->write = fd_write_wrapper;
+
     if(strcmp(vis->input_fifo,"-") != 0) {
         vis->fds[1].fd = open_read(vis->input_fifo);
         if(vis->fds[1].fd == -1) {
@@ -1259,6 +1268,7 @@ visualizer_init(visualizer *vis) {
         ndelay_on(vis->fds[1].fd);
     }
     vis->fds[1].events = IOPAUSE_READ;
+
 
     vis->ms_per_frame = (vis->processor.sample_window_len) / (vis->samplerate / 1000);
     vis->delay = (1000 / (vis->framerate / 2)) * 1000000;
@@ -1378,7 +1388,8 @@ visualizer_loop(visualizer *vis) {
 
     if(events && vis->fds[2].revents & IOPAUSE_WRITE) {
         unsigned int rem = ringbuf_bytes_used(vis->stream.frames);
-        int b = vis_ringbuf_write(vis->fds[2].fd,vis->stream.frames,rem);
+        int b = ringbuf_write(vis->stream.frames, rem);
+        /* int b = vis_ringbuf_write(vis->fds[2].fd,vis->stream.frames,rem); */
 
         if( b == -1) {
             goto closefifo;
@@ -1391,7 +1402,7 @@ visualizer_loop(visualizer *vis) {
     }
 
     if(events && vis->fds[1].revents & IOPAUSE_READ) {
-        if(visualizer_grab_audio(vis,vis->fds[1].fd) < 0) {
+        if(visualizer_grab_audio(vis) < 0) {
             strerr_warn1x("warning: no audio data received");
             return -1;
         }
@@ -1430,7 +1441,7 @@ int visualizer_cleanup(visualizer *vis) {
         draining = 1;
         while(draining) {
             ndelay_off(vis->fds[2].fd);
-            if(vis_ringbuf_write(vis->fds[2].fd,vis->stream.frames,ringbuf_bytes_used(vis->stream.frames)) < 0) {
+            if(ringbuf_write(vis->stream.frames,ringbuf_bytes_used(vis->stream.frames)) < 0) {
                 draining = 0;
             }
             visualizer_make_frames(vis);

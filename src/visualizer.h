@@ -46,6 +46,7 @@ typedef struct visualizer {
     char const *const *argv;
     int argc;
     int totaltime;
+    ringbuf_t rawaudio_buf;
     ringbuf_t mpd_buf;
     ringbuf_t mpd_q;
     unsigned int mpd_state;
@@ -105,6 +106,7 @@ typedef struct visualizer {
   .elapsed_ms = 0, \
   .delay = 0, \
   .delay_active = 0, \
+  .rawaudio_buf = NULL, \
   .mpd_buf = NULL, \
   .mpd_q = NULL, \
   .mpd_state = VIS_MPD_READ_IDLE, \

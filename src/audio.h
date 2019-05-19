@@ -26,8 +26,6 @@ typedef struct audio_processor {
     unsigned int framerate;
 
     unsigned int samples_available;
-    unsigned int samples_pos;
-    unsigned int samples_pos_read;
 
     unsigned int samples_len; /* samplerate * 4 */
     unsigned int sample_window_len; /* samplerate/framerate */
@@ -59,8 +57,6 @@ typedef struct audio_processor {
     .samplesize = 0, \
     .framerate = 0, \
     .samples_available = 0, \
-    .samples_pos = 0, \
-    .samples_pos_read = 0, \
     .samples_len = 0, \
     .sample_window_len = 0, \
     .chunk_len = 0, \

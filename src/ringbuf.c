@@ -14,7 +14,6 @@
  */
 
 #include "ringbuf.h"
-#include <skalibs/allreadwrite.h>
 
 /*
  * The code is written for clarity, not cleverness or performance, and
@@ -25,7 +24,7 @@
  */
 
 ringbuf_t
-ringbuf_new(size_t capacity)
+ringbuf_new(size_t capacity, size_t (*read)(uint8_t *, size_t, void *), void *read_context, size_t (*write)(uint8_t *, size_t, void *), void *write_context)
 {
     ringbuf_t rb = malloc(sizeof(struct ringbuf_t));
     if (rb) {
@@ -39,6 +38,10 @@ ringbuf_new(size_t capacity)
             free(rb);
             return 0;
         }
+        rb->read = read;
+        rb->write = write;
+        rb->read_context = read_context;
+        rb->write_context = write_context;
     }
     return rb;
 }
@@ -148,14 +151,15 @@ ringbuf_memcpy_into(ringbuf_t dst, const void *src, size_t count)
 }
 
 ssize_t
-ringbuf_read(int fd, ringbuf_t rb, size_t count)
+ringbuf_read(ringbuf_t rb, size_t count)
 {
     const uint8_t *bufend = ringbuf_end(rb);
     size_t nfree = ringbuf_bytes_free(rb);
 
     /* don't write beyond the end of the buffer */
     count = MIN((unsigned)(bufend - rb->head), count);
-    ssize_t n = fd_read(fd, (char *)rb->head, count);
+    ssize_t n = rb->read(rb->head, count, rb->read_context);
+
     if (n > 0) {
         rb->head += n;
 
@@ -197,7 +201,7 @@ ringbuf_memcpy_from(void *dst, ringbuf_t src, size_t count)
 }
 
 ssize_t
-ringbuf_write(int fd, ringbuf_t rb, size_t count)
+ringbuf_write(ringbuf_t rb, size_t count)
 {
     size_t bytes_used = ringbuf_bytes_used(rb);
     if (count > bytes_used)
@@ -205,7 +209,7 @@ ringbuf_write(int fd, ringbuf_t rb, size_t count)
 
     const uint8_t *bufend = ringbuf_end(rb);
     count = MIN((unsigned)(bufend - rb->tail), count);
-    ssize_t n = fd_write(fd, (char *)rb->tail, count);
+    ssize_t n = rb->write(rb->tail,count,rb->write_context);
     if (n > 0) {
         rb->tail += n;
 

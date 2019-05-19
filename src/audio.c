@@ -153,8 +153,8 @@ static void stereo_downmix(audio_processor *processor) {
 
     char *buffer = processor->output_buffer;
 
-    while(i<o) {
-        processor->fftw_buffer[i] = processor->fftw_buffer[o+i];
+    while(i+processor->sample_window_len < processor->chunk_len) {
+        processor->fftw_buffer[i] = processor->fftw_buffer[processor->sample_window_len+i];
         processor->fftw_in[i] = processor->fftw_buffer[i];
         processor->fftw_in[i] *= processor->window[i];
         i++;
@@ -313,8 +313,7 @@ audio_processor_init(audio_processor *processor) {
 
     processor->chunk_len = 4096;
     processor->samples_available = 0;
-    processor->samples_pos = 0;
-    processor->samples_pos_read = 0;
+
     processor->samples_len = processor->samplerate * 4;
     processor->sample_window_len = processor->samplerate / processor->framerate;
     while(processor->chunk_len < processor->sample_window_len) {
@@ -341,7 +340,7 @@ audio_processor_init(audio_processor *processor) {
         processor->audio_downmix_func = &mono_downmix;
     }
 
-    processor->samples = ringbuf_new(processor->chunk_len * processor->samplesize * processor->channels);
+    processor->samples = ringbuf_new(processor->chunk_len * processor->samplesize * processor->channels, NULL, NULL, NULL, NULL);
     if(!processor->samples) {
         return audio_processor_free(processor);
     }

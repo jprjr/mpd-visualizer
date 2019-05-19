@@ -41,6 +41,10 @@ struct ringbuf_t
     uint8_t *buf;
     uint8_t *head, *tail;
     size_t size;
+    size_t (*read)(uint8_t *, size_t, void *);
+    size_t (*write)(uint8_t *, size_t, void *);
+    void *read_context;
+    void *write_context;
 };
 
 typedef struct ringbuf_t *ringbuf_t;
@@ -54,7 +58,7 @@ typedef struct ringbuf_t *ringbuf_t;
  * memory to fulfill the request for the given capacity.
  */
 ringbuf_t
-ringbuf_new(size_t capacity);
+ringbuf_new(size_t capacity, size_t (*read)(uint8_t *, size_t, void *), void *read_context, size_t (*write)(uint8_t *, size_t, void *), void *write_context);
 
 /*
  * The size of the internal buffer, in bytes. One or more bytes may be
@@ -187,7 +191,7 @@ ringbuf_memcpy_into(ringbuf_t dst, const void *src, size_t count);
  * may be different than it was before the function was called.
  */
 ssize_t
-ringbuf_read(int fd, ringbuf_t rb, size_t count);
+ringbuf_read(ringbuf_t rb, size_t count);
 
 /*
  * Copy n bytes from the ring buffer src, starting from its tail
@@ -228,7 +232,7 @@ ringbuf_memcpy_from(void *dst, ringbuf_t src, size_t count);
  * return 0.
  */
 ssize_t
-ringbuf_write(int fd, ringbuf_t rb, size_t count);
+ringbuf_write(ringbuf_t rb, size_t count);
 
 /*
  * Copy count bytes from ring buffer src, starting from its tail
