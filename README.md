@@ -221,7 +221,7 @@ The `stream` table has two keys:
   * `stream.audio.channels` - audio channels, like `2`
   * `stream.audio.samplesize` - sample size in bytes, like `2` for 16-bit audio
   * `stream.audio.freqs` - an array of available frequencies, suitable for making a visualizer
-  * `stream.audio.amps` - an array of available amplitudes, suitable for making a visualizer
+  * `stream.audio.amps` - an array of available amplitudes, suitable for making a visualizer - values between 0.0 and 1.0
   * `stream.audio.spectrum_len` - the number of available amplitudes/frequencies
 
 ### The global `image` object
