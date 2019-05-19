@@ -14,6 +14,7 @@ typedef struct frange {
     double freq;
     double amp;
     double prevamp;
+    double boost;
     unsigned int first_bin;
     unsigned int last_bin;
 } frange;

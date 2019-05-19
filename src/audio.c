@@ -10,10 +10,30 @@
 
 #define SMOOTH_DOWN 0.2
 #define SMOOTH_UP 0.8
+#define AMP_MAX 70.0f
+#define AMP_MIN 70.0f
+#define AMP_BOOST 1.8f
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+static double itur_468(double freq) {
+    /* only calculate this for freqs > 1000 */
+    if(freq >= 1000.0f) {
+        return 0.0f;
+    }
+    double h1 = (-4.737338981378384 * pow(10,-24) * pow(freq,6)) +
+                ( 2.043828333606125 * pow(10,-15) * pow(freq,4)) -
+                ( 1.363894795463638 * pow(10,-7)  * pow(freq,2)) +
+                1;
+    double h2 = ( 1.306612257412824 * pow(10,-19) * pow(freq,5)) -
+                ( 2.118150887518656 * pow(10,-11) * pow(freq,3)) +
+                ( 5.559488023498642 * pow(10,-4)  * freq);
+    double r1 = ( 1.246332637532143 * pow(10,-4) * freq ) /
+                sqrt(pow(h1,2) + pow(h2,2));
+    return 18.2f + (20.0f * log10(r1));
+}
 
 static double window_none(int i, int n) {
     (void)i;
@@ -211,15 +231,28 @@ void audio_processor_fftw(audio_processor *processor) {
         processor->spectrum_cur[i].amp = find_amplitude_max(processor->fftw_out,processor->spectrum_cur[i].first_bin,processor->spectrum_cur[i].last_bin,processor->chunk_len);
 
         if(!isfinite(processor->spectrum_cur[i].amp)) {
-            processor->spectrum_cur[i].amp = -100.0f; /* filtered out next line */
-        }
-        if(processor->spectrum_cur[i].amp < -90.0f) {
-            processor->spectrum_cur[i].amp = 0.0f;
-        }
-        else {
-            processor->spectrum_cur[i].amp += 90.0f;
+            processor->spectrum_cur[i].amp = -999.0f; /* filtered out next line */
         }
 
+        processor->spectrum_cur[i].amp += processor->spectrum_cur[i].boost;
+
+        if(processor->spectrum_cur[i].amp <= -AMP_MIN) {
+            processor->spectrum_cur[i].amp = -AMP_MIN;
+        }
+
+        processor->spectrum_cur[i].amp += AMP_MIN;
+
+        if(processor->spectrum_cur[i].amp > AMP_MAX) {
+            processor->spectrum_cur[i].amp = AMP_MAX;
+        }
+
+        processor->spectrum_cur[i].amp /= AMP_MAX;
+
+        processor->spectrum_cur[i].amp *= AMP_BOOST; /* i seem to rarely get results near 1.0, let's give this a boost */
+
+        if(processor->spectrum_cur[i].amp > 1.0f) {
+            processor->spectrum_cur[i].amp = 1.0f;
+        }
 
         if(processor->firstflag) {
             if(processor->spectrum_cur[i].amp < processor->spectrum_cur[i].prevamp) {
@@ -255,10 +288,19 @@ audio_processor_init(audio_processor *processor) {
     unsigned int i = 0;
     double bin_size = 0.0f;
     double freq_min = 50.0f;
-    double freq_max = 10000.0f;
-
-    double freq_const = log10(freq_min / freq_max) /
-      (1.0f / ((double)processor->spectrum_len + 1.0f) - 1.0f);
+    double freq_max = processor->samplerate / 2;
+    if(freq_max > 10000.0f) {
+        freq_max = 10000.0f;
+    }
+    double octaves = ceil(log2(freq_max / freq_min));
+    double interval = 1.0f / (octaves / (double)processor->spectrum_len);
+    /*
+    if(ceil(interval) - interval <= 0.5) {
+        interval = ceil(interval);
+    } else {
+        interval = floor(interval);
+    }
+    */
 
     if(processor->channels > 2) {
         strerr_warn1x("error: too many channels, max is 2");
@@ -309,7 +351,7 @@ audio_processor_init(audio_processor *processor) {
         return audio_processor_free(processor);
     }
     for(i=0;i<processor->chunk_len;i++) {
-        processor->window[i] = window_hann(i,processor->chunk_len);
+        processor->window[i] = window_blackman_harris(i,processor->chunk_len);
     }
 
     processor->fftw_buffer = (double *)fftw_malloc(sizeof(double) * processor->chunk_len);
@@ -341,22 +383,32 @@ audio_processor_init(audio_processor *processor) {
         return audio_processor_free(processor);
     }
 
+
     for(i=0;i<processor->spectrum_len+1;i++) {
-        processor->spectrum_cur[i].first_bin = 0;
-        processor->spectrum_cur[i].last_bin = 0;
         processor->spectrum_cur[i].amp = 0.0f;
         processor->spectrum_cur[i].prevamp = 0.0f;
-
-        double cutoff = freq_max * pow(10, freq_const * (-1.0f) + ((((double)i + 1.0f) / ((double)processor->spectrum_len + 1.0f)) * freq_const));
-        double fre = cutoff / ((double)processor->samplerate / 2.0f);
-
-        processor->spectrum_cur[i].freq = cutoff;
-        processor->spectrum_cur[i].first_bin = fre * processor->chunk_len / 2;
-        if(i != 0) {
-           processor->spectrum_cur[i-1].last_bin = processor->spectrum_cur[i].first_bin - 1;
+        if(i==0) {
+            processor->spectrum_cur[i].freq = freq_min;
         }
-    }
+        else {
+            /* see http://www.zytrax.com/tech/audio/calculator.html#centers_calc */
+            processor->spectrum_cur[i].freq = processor->spectrum_cur[i-1].freq * pow(10, 3 / (10 * interval));
+        }
 
+        /* fudging this a bit to avoid overlap */
+        double upper_freq = processor->spectrum_cur[i].freq * pow(10, (3 * 1) / (10 * 2 * floor(interval)));
+        double lower_freq = processor->spectrum_cur[i].freq / pow(10, (3 * 1) / (10 * 2 * ceil(interval)));
+
+        processor->spectrum_cur[i].first_bin = (unsigned int)floor(lower_freq / bin_size);
+        processor->spectrum_cur[i].last_bin = (unsigned int)floor(upper_freq / bin_size);
+
+        if(processor->spectrum_cur[i].last_bin > processor->chunk_len / 2) {
+            processor->spectrum_cur[i].last_bin = processor->chunk_len / 2;
+        }
+        /* figure out the ITU-R 468 weighting to apply */
+        processor->spectrum_cur[i].boost = itur_468(processor->spectrum_cur[i].freq);
+
+    }
     return 1;
 }
 
