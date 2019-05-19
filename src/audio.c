@@ -422,6 +422,7 @@ audio_processor_free(audio_processor *processor) {
     if(processor->plan) fftw_destroy_plan(processor->plan);
     if(processor->fftw_in) fftw_free(processor->fftw_in);
     if(processor->fftw_out) fftw_free(processor->fftw_out);
+    if(processor->fftw_buffer) fftw_free(processor->fftw_buffer);
     if(processor->spectrum_cur) free(processor->spectrum_cur);
     fftw_cleanup();
     return 0;
