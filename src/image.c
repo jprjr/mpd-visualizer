@@ -210,6 +210,7 @@ image_load(
     }
 
     stbi_image_free(t);
+    if(delays != NULL) free(delays);
 
     return image;
 }
