@@ -340,7 +340,7 @@ audio_processor_init(audio_processor *processor) {
         processor->audio_downmix_func = &mono_downmix;
     }
 
-    processor->samples = ringbuf_new(processor->chunk_len * processor->samplesize * processor->channels, NULL, NULL, NULL, NULL);
+    processor->samples = ringbuf_new(processor->chunk_len * processor->samplesize * processor->channels);
     if(!processor->samples) {
         return audio_processor_free(processor);
     }

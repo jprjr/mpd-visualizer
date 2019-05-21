@@ -24,7 +24,7 @@
  */
 
 ringbuf_t
-ringbuf_new(size_t capacity, size_t (*read)(uint8_t *, size_t, void *), void *read_context, size_t (*write)(uint8_t *, size_t, void *), void *write_context)
+ringbuf_new(size_t capacity)
 {
     ringbuf_t rb = malloc(sizeof(struct ringbuf_t));
     if (rb) {
@@ -38,10 +38,6 @@ ringbuf_new(size_t capacity, size_t (*read)(uint8_t *, size_t, void *), void *re
             free(rb);
             return 0;
         }
-        rb->read = read;
-        rb->write = write;
-        rb->read_context = read_context;
-        rb->write_context = write_context;
     }
     return rb;
 }

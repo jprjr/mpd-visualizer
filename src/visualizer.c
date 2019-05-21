@@ -63,16 +63,6 @@ typedef struct lua_func_list {
 extern "C" {
 #endif
 
-static size_t visualizer_decode_audio_raw(visualizer *vis) {
-    /* no conversions or anything, we can just copy right into the audio processor sample buffer */
-    ringbuf_copy(
-      vis->processor.samples,
-      vis->rawaudio_buf,
-      VIS_MIN(ringbuf_bytes_free(vis->processor.samples),ringbuf_bytes_used(vis->rawaudio_buf)));
-    vis->processor.samples_available = ringbuf_bytes_used(vis->processor.samples) / (vis->processor.channels * vis->processor.samplesize);
-    return vis->processor.samples_available;
-}
-
 static size_t fd_read_wrapper(uint8_t *dest, size_t count, void *ctx)
 {
     int *fd = ctx;
@@ -274,8 +264,6 @@ visualizer_free(visualizer *vis) {
     audio_processor_free(&(vis->processor));
     s6dns_finish();
 
-    if(vis->rawaudio_buf) ringbuf_free(&(vis->rawaudio_buf));
-
     if(vis->mpd_q) ringbuf_free(&(vis->mpd_q));
     if(vis->mpd_buf) ringbuf_free(&(vis->mpd_buf));
     if(vis->Lua) {
@@ -289,13 +277,14 @@ static inline int
 visualizer_grab_audio(visualizer *vis) {
     int bytes_read = 0;
 
-    bytes_read = ringbuf_read(vis->rawaudio_buf,ringbuf_bytes_free(vis->rawaudio_buf));
+    bytes_read = ringbuf_fill(vis->processor.samples);
     if(bytes_read <= 0) {
         strerr_warn1sys("warning: problem grabbing audio data: ");
         return -1;
     }
+    vis->processor.samples_available = ringbuf_bytes_used(vis->processor.samples) / (vis->processor.channels * vis->processor.samplesize);
 
-    return visualizer_decode_audio_raw(vis);
+    return vis->processor.samples_available;
 }
 
 static int
@@ -1059,18 +1048,12 @@ visualizer_init(visualizer *vis) {
         return visualizer_free(vis);
     }
 
-    vis->rawaudio_buf = ringbuf_new(1024 * 1024, fd_read_wrapper, &(vis->fds[1].fd), NULL, NULL);
-
-    if(!vis->rawaudio_buf) {
-        return visualizer_free(vis);
-    }
-
-    vis->mpd_q = ringbuf_new(100, NULL, NULL, NULL, NULL);
+    vis->mpd_q = ringbuf_new(100);
     if(!vis->mpd_q) {
         return visualizer_free(vis);
     }
 
-    vis->mpd_buf = ringbuf_new(4096, NULL, NULL, NULL, NULL);
+    vis->mpd_buf = ringbuf_new(4096);
     if(!vis->mpd_buf) {
         return visualizer_free(vis);
     }
@@ -1268,6 +1251,9 @@ visualizer_init(visualizer *vis) {
         ndelay_on(vis->fds[1].fd);
     }
     vis->fds[1].events = IOPAUSE_READ;
+
+    vis->processor.samples->read_context = &(vis->fds[1].fd);
+    vis->processor.samples->read = fd_read_wrapper;
 
 
     vis->ms_per_frame = (vis->processor.sample_window_len) / (vis->samplerate / 1000);

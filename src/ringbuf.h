@@ -58,7 +58,7 @@ typedef struct ringbuf_t *ringbuf_t;
  * memory to fulfill the request for the given capacity.
  */
 ringbuf_t
-ringbuf_new(size_t capacity, size_t (*read)(uint8_t *, size_t, void *), void *read_context, size_t (*write)(uint8_t *, size_t, void *), void *write_context);
+ringbuf_new(size_t capacity);
 
 /*
  * The size of the internal buffer, in bytes. One or more bytes may be
@@ -192,6 +192,8 @@ ringbuf_memcpy_into(ringbuf_t dst, const void *src, size_t count);
  */
 ssize_t
 ringbuf_read(ringbuf_t rb, size_t count);
+
+#define ringbuf_fill(rb) ringbuf_read(rb, ringbuf_bytes_free(rb) )
 
 /*
  * Copy n bytes from the ring buffer src, starting from its tail
