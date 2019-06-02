@@ -126,8 +126,8 @@ avi_stream_init(
 }
 
 int
-avi_stream_write_header(avi_stream *stream,int fd) {
-    return fd_write(fd,(char *)stream->avi_header,326);
+avi_stream_write_header(avi_stream *stream, void *ctx, int(*w)(uint8_t *buf, size_t size, void *ctx)) {
+    return w(stream->avi_header,326,ctx);
 }
 
 #ifdef __cplusplus

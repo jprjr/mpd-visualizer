@@ -1227,7 +1227,7 @@ visualizer_init(visualizer *vis) {
             vis->fds[2].fd = fileno(stdout);
         }
         ndelay_off(vis->fds[2].fd);
-        avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
+        avi_stream_write_header(&(vis->stream),&(vis->fds[2].fd),&fd_write_wrapper);
         ndelay_on(vis->fds[2].fd);
     }
 
@@ -1306,7 +1306,7 @@ visualizer_loop(visualizer *vis) {
             vis->fds[2].revents = 0;
             vis->fds[2].events = IOPAUSE_EXCEPT;
             ndelay_off(vis->fds[2].fd);
-            avi_stream_write_header(&(vis->stream),vis->fds[2].fd);
+            avi_stream_write_header(&(vis->stream),&(vis->fds[2].fd),&fd_write_wrapper);
             ndelay_on(vis->fds[2].fd);
         }
     }
