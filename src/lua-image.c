@@ -463,7 +463,6 @@ lua_image_load(lua_State *L) {
               b += width * height * channels;
               delay = 0 + b[0];
               delay += b[1] << 8;
-              delay *= 10;
             }
             else {
                 delay = 0;
