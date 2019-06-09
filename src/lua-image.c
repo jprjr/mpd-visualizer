@@ -2,6 +2,7 @@
 #include "lua-image.h"
 #include "image.lua.lh"
 #include "thread.h"
+#include "visualizer.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -1094,7 +1095,7 @@ int luaimage_stop_threads(void) {
     return 0;
 }
 
-int luaopen_image(lua_State *L) {
+int luaopen_image(lua_State *L,void *vis) {
     luaL_newmetatable(L,"image");
     lua_newtable(L);
     luaL_setfuncs(L,lua_image_image_methods,0);
@@ -1114,7 +1115,9 @@ int luaopen_image(lua_State *L) {
         strerr_die2x(1,"error: ",lua_tostring(L,-1));
     }
 
-    if(lua_pcall(L,0,0,0)) {
+    lua_pushlightuserdata(L,vis);
+
+    if(lua_pcall(L,1,0,0)) {
         strerr_die2x(1,"error: ",lua_tostring(L,-1));
     }
 

@@ -34,8 +34,6 @@
 #define dienomem() strerr_die1x(1,"error: out of memory")
 #define VIS_MIN(a,b) ( a < b ? a : b )
 
-static visualizer *global_vis;
-
 static stralloc mpd_songid   = STRALLOC_ZERO;
 static stralloc mpd_elapsed  = STRALLOC_ZERO;
 static stralloc mpd_duration = STRALLOC_ZERO;
@@ -133,8 +131,8 @@ lua_func_list_find(genalloc *list, const char *filename) {
 }
 
 void
-visualizer_set_image_cb(void (*lua_image_cb)(lua_State *L, intptr_t table_ref, unsigned int frames, uint8_t *image)) {
-    global_vis->lua_image_cb = lua_image_cb;
+visualizer_set_image_cb(visualizer *vis, void (*lua_image_cb)(lua_State *L, intptr_t table_ref, unsigned int frames, uint8_t *image)) {
+    vis->lua_image_cb = lua_image_cb;
 }
 
 static inline void
@@ -882,7 +880,6 @@ visualizer_reload(visualizer *vis) {
     if(selfpipe_trap(SIGUSR2) < 0) {
         strerr_die1sys(1,"error: unable to trap SIGUSR2: ");
     }
-    global_vis = vis;
     luaimage_setup_threads(&(vis->image_queue));
     audio_processor_reload(&(vis->processor));
     return 1;
@@ -1009,9 +1006,6 @@ visualizer_init(visualizer *vis) {
         strerr_die1sys(1,"error: unable to init timer: ");
     }
 
-
-    global_vis = vis;
-
     pthread_t this_thread = pthread_self();
     struct sched_param sparams;
     struct stat st;
@@ -1021,7 +1015,7 @@ visualizer_init(visualizer *vis) {
     sparams.sched_priority = sched_get_priority_max(SCHED_FIFO);
     pthread_setschedparam(this_thread,SCHED_FIFO,&sparams);
 
-    visualizer_set_image_cb(lua_load_image_cb);
+    visualizer_set_image_cb(vis,lua_load_image_cb);
 
     thread_queue_init(&(vis->image_queue),100,(void **)&(vis->images),0);
 
@@ -1090,7 +1084,7 @@ visualizer_init(visualizer *vis) {
     }
 
     luaL_openlibs(vis->Lua);
-    luaopen_image(vis->Lua);
+    luaopen_image(vis->Lua,vis);
     luaopen_file(vis->Lua);
 
     if(luaL_loadbuffer(vis->Lua,font_lua,font_lua_length-1,"font.lua")) {
@@ -1227,7 +1221,7 @@ visualizer_init(visualizer *vis) {
             vis->fds[2].fd = fileno(stdout);
         }
         ndelay_off(vis->fds[2].fd);
-        avi_stream_write_header(&(vis->stream),&(vis->fds[2].fd),&fd_write_wrapper);
+        avi_stream_write_header(&(vis->stream),&(vis->fds[2].fd),fd_write_wrapper);
         ndelay_on(vis->fds[2].fd);
     }
 
@@ -1306,7 +1300,7 @@ visualizer_loop(visualizer *vis) {
             vis->fds[2].revents = 0;
             vis->fds[2].events = IOPAUSE_EXCEPT;
             ndelay_off(vis->fds[2].fd);
-            avi_stream_write_header(&(vis->stream),&(vis->fds[2].fd),&fd_write_wrapper);
+            avi_stream_write_header(&(vis->stream),&(vis->fds[2].fd),fd_write_wrapper);
             ndelay_on(vis->fds[2].fd);
         }
     }

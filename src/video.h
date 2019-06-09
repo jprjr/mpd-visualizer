@@ -65,7 +65,7 @@ avi_stream_init(
   unsigned int samplesize);
 
 size_t
-avi_stream_write_header(avi_stream *stream, void *ctx, int(*w)(uint8_t *buf, size_t size, void *ctx));
+avi_stream_write_header(avi_stream *stream, void *ctx, size_t(*w)(uint8_t *buf, size_t size, void *ctx));
 
 int
 avi_stream_free(avi_stream *stream);

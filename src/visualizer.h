@@ -136,6 +136,9 @@ visualizer_reload(visualizer *vis);
 int
 visualizer_unload(visualizer *vis);
 
+void
+visualizer_set_image_cb(visualizer *vis,void (*lua_image_cb)(lua_State *L, intptr_t table_ref, unsigned int frames, uint8_t *image));
+
 #ifdef __cplusplus
 }
 #endif
