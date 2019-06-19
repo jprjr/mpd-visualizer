@@ -13,6 +13,7 @@ HEADERS = \
   src/image.h \
   src/lua-file.h \
   src/lua-image.h \
+  src/mpdc.h \
   src/shared.h \
   src/stb_image.h \
   src/stb_image_resize.h \
@@ -27,6 +28,7 @@ LIBSRCS = \
   src/lua-audio.c \
   src/lua-file.c \
   src/lua-image.c \
+  src/mpdc.c \
   src/ringbuf.c \
   src/thread.c \
   src/video.c \
@@ -39,6 +41,7 @@ LIBOBJS = \
   src/lua-audio.o \
   src/lua-file.o \
   src/lua-image.o \
+  src/mpdc.o \
   src/ringbuf.o \
   src/thread.o \
   src/video.o \

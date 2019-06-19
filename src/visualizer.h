@@ -7,6 +7,7 @@
 #include "video.h"
 #include "thread.h"
 #include "ringbuf.h"
+#include "mpdc.h"
 #include <skalibs/skalibs.h>
 #include <skalibs/genalloc.h>
 #include <lua.h>
@@ -46,33 +47,10 @@ typedef struct visualizer {
     char const *const *argv;
     int argc;
     int totaltime;
-    ringbuf_t mpd_buf;
-    ringbuf_t mpd_q;
-    unsigned int mpd_state;
-    stralloc mpd_password;
-    char *mpd_host;
-    int32_t mpd_port;
-    uint32_t mpd_major;
-    uint32_t mpd_minor;
-    uint32_t mpd_patch;
+    mpdc_connection *mpd_conn;
     genalloc iplist;
 } visualizer;
 
-#define VIS_MPD_READ_OK 0
-#define VIS_MPD_READ_SUBSCRIBE 1
-#define VIS_MPD_READ_IDLE 2
-#define VIS_MPD_READ_STATUS 3
-#define VIS_MPD_READ_CURRENTSONG 4
-#define VIS_MPD_READ_MESSAGE 5
-#define VIS_MPD_READ_PASSWORD 6
-#define VIS_MPD_READ_PING 7
-#define VIS_MPD_SEND_IDLE 8
-#define VIS_MPD_SEND_STATUS 9
-#define VIS_MPD_SEND_CURRENTSONG 10
-#define VIS_MPD_SEND_MESSAGE 11
-#define VIS_MPD_SEND_SUBSCRIBE 12
-#define VIS_MPD_SEND_PASSWORD 13
-#define VIS_MPD_SEND_PING 14
 
 #define VISUALIZER_ZERO { \
   .argv = NULL, \
@@ -105,15 +83,7 @@ typedef struct visualizer {
   .elapsed_ms = 0, \
   .delay = 0, \
   .delay_active = 0, \
-  .mpd_buf = NULL, \
-  .mpd_q = NULL, \
-  .mpd_state = VIS_MPD_READ_IDLE, \
-  .mpd_password = STRALLOC_ZERO, \
-  .mpd_host = NULL, \
-  .mpd_port = -1, \
-  .mpd_major = 0, \
-  .mpd_minor = 0, \
-  .mpd_patch = 0, \
+  .mpd_conn = NULL, \
   .iplist = GENALLOC_ZERO, \
 }
 
