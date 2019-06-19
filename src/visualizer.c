@@ -75,6 +75,35 @@ static size_t fd_write_wrapper(uint8_t *src, size_t count, void *ctx)
     return fd_write(*fd, (char *)src, count);
 }
 
+static int
+lua_send_message_offline(lua_State *L) {
+    (void)L;
+    return 0;
+}
+
+static int
+lua_send_message(lua_State *L) {
+  mpdc_connection *ctx;
+  const char *message;
+  ctx = lua_touserdata(L, lua_upvalueindex(1));
+  message = lua_tostring(L,1);
+
+  if(message == NULL) {
+      lua_pushboolean(L,0);
+      return 1;
+  }
+
+  int r = mpdc_sendmessage(ctx,"visualizer",message);
+
+  if(r <= 0) {
+      lua_pushboolean(L,0);
+  }
+  else {
+      lua_pushboolean(L,1);
+  }
+  return 1;
+}
+
 static inline int
 resolve_dns(genalloc *ips, char const *name) {
     stralloc ip4 = STRALLOC_ZERO;
@@ -301,26 +330,8 @@ visualizer_grab_audio(visualizer *vis) {
     return vis->processor.samples_available;
 }
 
-#if 0
-    /* quick sanity check */
-    ringbuf_append(vis->mpd_q,VIS_MPD_SEND_PING);
-    ringbuf_append(vis->mpd_q,VIS_MPD_READ_PING);
-    ringbuf_append(vis->mpd_q,VIS_MPD_SEND_SUBSCRIBE);
-    ringbuf_append(vis->mpd_q,VIS_MPD_READ_SUBSCRIBE);
-    ringbuf_append(vis->mpd_q,VIS_MPD_SEND_STATUS);
-    ringbuf_append(vis->mpd_q,VIS_MPD_READ_STATUS);
-    ringbuf_append(vis->mpd_q,VIS_MPD_SEND_MESSAGE);
-    ringbuf_append(vis->mpd_q,VIS_MPD_READ_MESSAGE);
-    ringbuf_append(vis->mpd_q,VIS_MPD_SEND_CURRENTSONG);
-    ringbuf_append(vis->mpd_q,VIS_MPD_READ_CURRENTSONG);
-    ringbuf_append(vis->mpd_q,VIS_MPD_SEND_IDLE);
-    ringbuf_append(vis->mpd_q,VIS_MPD_READ_IDLE);
-#endif
-
-
 static int vis_mpdc_write(void *ctx, const uint8_t *buf, unsigned int len) {
     visualizer *vis = (visualizer *)ctx;
-
     return fd_send(vis->fds[3].fd,(const char *)buf,len,0);
 }
 
@@ -462,13 +473,13 @@ static void vis_mpdc_response(mpdc_connection *conn, const char *cmd, const char
     }
     else if(strcmp(cmd,"readmessages") == 0) {
         if(strcmp(key,"message") == 0) {
-            lua_getglobal(vis->Lua,"song");
-            lua_pushlstring(vis->Lua,(const char *)value,length);
-            lua_setfield(vis->Lua,-2,"message");
+            lua_getglobal(vis->Lua,"song"); /* push */
+            lua_pushlstring(vis->Lua,(const char *)value,length); /* push */
+            lua_setfield(vis->Lua,-2,"message"); /* pop */
 
             for(lua_i=0;lua_i<func_list_len(&(vis->lua_funcs));lua_i++) {
                 if(func_list_s(&(vis->lua_funcs))[lua_i].change_ref != -1) {
-                    lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,func_list_s(&(vis->lua_funcs))[lua_i].change_ref);
+                    lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,func_list_s(&(vis->lua_funcs))[lua_i].change_ref); /* push */
                     if(lua_isfunction(vis->Lua,-1)) {
                         lua_pushstring(vis->Lua,"message");
                         if(lua_pcall(vis->Lua,1,0,0)) {
@@ -476,15 +487,17 @@ static void vis_mpdc_response(mpdc_connection *conn, const char *cmd, const char
                         }
                     }
                     else {
-                        lua_pop(vis->Lua,1);
+                        lua_pop(vis->Lua,1); /* pop */
                     }
                 }
             }
+            lua_pop(vis->Lua,1);
         }
     }
     else if(strcmp(cmd,"idle") == 0) {
         if(strcmp(key,"changed") == 0) {
             if(strcmp((const char *)value,"player") == 0) {
+                mpdc_status(conn);
                 mpdc_currentsong(conn);
             }
             else if(strcmp((const char *)value,"message") == 0) {
@@ -505,7 +518,7 @@ static void vis_mpdc_response_end(mpdc_connection *conn, const char *cmd, int ok
 
 
     if(strcmp(cmd,"status") == 0 || strcmp(cmd,"currentsong") == 0) {
-      lua_getglobal(vis->Lua,"song");
+      lua_getglobal(vis->Lua,"song"); /* push */
 
       if(strcmp(cmd,"status") == 0) {
         if(mpd_songid.len) {
@@ -517,7 +530,7 @@ static void vis_mpdc_response_end(mpdc_connection *conn, const char *cmd, int ok
             lua_pushnil(vis->Lua);
         }
 
-        lua_setfield(vis->Lua,-2,"id");
+        lua_setfield(vis->Lua,-2,"id"); /* balanced */
 
         mpd_songid.len = 0;
 
@@ -544,8 +557,9 @@ static void vis_mpdc_response_end(mpdc_connection *conn, const char *cmd, int ok
             stralloc_0(&mpd_duration);
             uint32_scan(mpd_duration.s,&t);
             lua_pushinteger(vis->Lua,t);
-            lua_setfield(vis->Lua,-2,"total");
+            lua_setfield(vis->Lua,-2,"total"); /* balanced */
         }
+
         else if (mpd_time.len) {
             stralloc_0(&mpd_time);
             j = str_chr(mpd_time.s,':');
@@ -553,11 +567,15 @@ static void vis_mpdc_response_end(mpdc_connection *conn, const char *cmd, int ok
                 uint32_scan(mpd_time.s + j + 1, &t);
                 lua_pushinteger(vis->Lua,t);
             }
-            lua_setfield(vis->Lua,-2,"total");
+            else {
+                lua_pushnil(vis->Lua);
+            }
+            lua_setfield(vis->Lua,-2,"total"); /* balanced */
         }
         mpd_duration.len = 0;
         mpd_time.len = 0;
       }
+
       else if(strcmp(cmd,"currentsong") == 0) {
         mpd_file.len ? lua_pushlstring(vis->Lua,mpd_file.s,mpd_file.len) : lua_pushnil(vis->Lua);
         lua_setfield(vis->Lua,-2,"file");
@@ -575,9 +593,10 @@ static void vis_mpdc_response_end(mpdc_connection *conn, const char *cmd, int ok
         mpd_title.len = 0;
         mpd_artist.len = 0;
         mpd_album.len = 0;
+        /* all balanced */
       }
 
-      lua_settop(vis->Lua,0);
+      lua_pop(vis->Lua,1);
 
       for(lua_i=0;lua_i<func_list_len(&(vis->lua_funcs));lua_i++) {
           if(func_list_s(&(vis->lua_funcs))[lua_i].change_ref != -1) {
@@ -589,7 +608,7 @@ static void vis_mpdc_response_end(mpdc_connection *conn, const char *cmd, int ok
                   }
               }
               else {
-                  lua_pop(vis->Lua,1);
+                  lua_pop(vis->Lua,1); /* balanced */
               }
           }
       }
@@ -641,10 +660,12 @@ visualizer_make_frames(visualizer *vis) {
                         strerr_warn2x("error: ",lua_tostring(vis->Lua,-1));
                     }
                 }
+                else {
+                    lua_pop(vis->Lua,1);
+                }
             }
-
-            lua_settop(vis->Lua,0);
         }
+        lua_pop(vis->Lua,1);
 
         lua_gc(vis->Lua,LUA_GCCOLLECT,0);
 
@@ -835,8 +856,16 @@ visualizer_init(visualizer *vis) {
             lua_pushinteger(vis->Lua,vis->totaltime);
             lua_setfield(vis->Lua,-2,"total");
         }
+        lua_pushcfunction(vis->Lua, lua_send_message_offline);
+        lua_setfield(vis->Lua,-2,"sendmessage");
 
     }
+    else {
+        lua_pushlightuserdata(vis->Lua,vis->mpd_conn);
+        lua_pushcclosure(vis->Lua, lua_send_message,1);
+        lua_setfield(vis->Lua,-2,"sendmessage");
+    }
+
     lua_setglobal(vis->Lua,"song");
     lua_settop(vis->Lua,0);
 

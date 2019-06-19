@@ -330,6 +330,8 @@ int mpdc__put(mpdc_connection *connection, unsigned int cmd, const char *fmt, ..
 #define mpdc_prio(conn,prio,start,end) mpdc__put((conn),MPDC_COMMAND_PRIO,"uu:U",prio,start,end)
 #define mpdc_priod(conn,prio,id) mpdc__put((conn),MPDC_COMMAND_PRIOD,"uu",prio,id)
 
+#define mpdc_sendmessage(conn,channel,text) mpdc__put((conn),MPDC_COMMAND_SENDMESSAGE,"ss",channel,text)
+
 #if 0
 #define mpdc_consume1(conn) mpdc__zero_arg((conn),MPDC_COMMAND_CONSUME)
 #define mpdc_consume2(conn,state) mpdc__put((conn),MPDC_COMMAND_CONSUME,"u",state)
