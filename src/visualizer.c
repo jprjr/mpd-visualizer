@@ -1096,20 +1096,25 @@ visualizer_loop(visualizer *vis) {
     }
 
     if(events && vis->fds[3].revents & IOPAUSE_READ) {
-        mpdc_receive(vis->mpd_conn);
+        if(mpdc_receive(vis->mpd_conn) == -1) {
+          mpdc_disconnect(vis->mpd_conn);
+          if(!mpdc_connect(vis->mpd_conn)) strerr_die1x(1,"error: could not reconnect to mpd");
+          mpdc_subscribe(vis->mpd_conn,"visualizer");
+          mpdc_currentsong(vis->mpd_conn);
+          mpdc_status(vis->mpd_conn);
+          mpdc_idle(vis->mpd_conn, MPDC_EVENT_PLAYER | MPDC_EVENT_MESSAGE);
+        }
     }
 
     if(events && vis->fds[3].revents & IOPAUSE_WRITE) {
-        mpdc_send(vis->mpd_conn);
-    }
-
-    if(events && vis->fds[3].revents & IOPAUSE_EXCEPT) {
-        mpdc_disconnect(vis->mpd_conn);
-        if(!mpdc_connect(vis->mpd_conn)) strerr_die1x(1,"error: could not reconnect to mpd");
-        mpdc_subscribe(vis->mpd_conn,"visualizer");
-        mpdc_currentsong(vis->mpd_conn);
-        mpdc_status(vis->mpd_conn);
-        mpdc_idle(vis->mpd_conn, MPDC_EVENT_PLAYER | MPDC_EVENT_MESSAGE);
+        if(mpdc_send(vis->mpd_conn) == -1) {
+          mpdc_disconnect(vis->mpd_conn);
+          if(!mpdc_connect(vis->mpd_conn)) strerr_die1x(1,"error: could not reconnect to mpd");
+          mpdc_subscribe(vis->mpd_conn,"visualizer");
+          mpdc_currentsong(vis->mpd_conn);
+          mpdc_status(vis->mpd_conn);
+          mpdc_idle(vis->mpd_conn, MPDC_EVENT_PLAYER | MPDC_EVENT_MESSAGE);
+        }
     }
 
     }
