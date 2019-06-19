@@ -46,6 +46,7 @@ static stralloc mpd_artist   = STRALLOC_ZERO;
 typedef struct lua_func_list {
     int frame_ref;
     int reload_ref;
+    int change_ref;
     time_t mtime;
     stralloc filename;
 } lua_func_list;
@@ -53,6 +54,7 @@ typedef struct lua_func_list {
 #define LUA_FUNC_LIST_ZERO { \
   .frame_ref = -1, \
   .reload_ref = -1, \
+  .change_ref = -1, \
   .mtime = -1, \
   .filename = STRALLOC_ZERO, \
 }
@@ -145,7 +147,9 @@ lua_func_list_free(visualizer *vis, genalloc *list) {
         if(func_list_s(list)[i].reload_ref != -1) {
             luaL_unref(vis->Lua, LUA_REGISTRYINDEX, func_list_s(list)[i].reload_ref );
         }
-        luaL_unref(vis->Lua, LUA_REGISTRYINDEX, func_list_s(list)[i].reload_ref );
+        if(func_list_s(list)[i].change_ref != -1) {
+            luaL_unref(vis->Lua, LUA_REGISTRYINDEX, func_list_s(list)[i].change_ref );
+        }
         stralloc_free(&(func_list_s(list)[i].filename));
     }
     func_list_free(list);
@@ -213,6 +217,17 @@ visualizer_load_scripts(visualizer *vis) {
                     luaL_unref(vis->Lua,LUA_REGISTRYINDEX,cur->reload_ref);
                 }
                 cur->reload_ref = luaL_ref(vis->Lua,LUA_REGISTRYINDEX);
+            }
+            else {
+                lua_pop(vis->Lua,1);
+            }
+
+            lua_getfield(vis->Lua,-1,"onchange");
+            if(lua_isfunction(vis->Lua,-1)) {
+                if(cur->change_ref != -1) {
+                    luaL_unref(vis->Lua,LUA_REGISTRYINDEX,cur->change_ref);
+                }
+                cur->change_ref = luaL_ref(vis->Lua,LUA_REGISTRYINDEX);
             }
             else {
                 lua_pop(vis->Lua,1);
@@ -502,11 +517,12 @@ visualizer_mpd_idle(visualizer *vis) {
 static inline void
 visualizer_mpd_status(visualizer *vis) {
     char d[4097];
-    int len = 0;
-    int i = 0;
+    unsigned int len = 0;
+    unsigned int i = 0;
     unsigned int j = 0;
     unsigned int k = 0;
     unsigned int t = 0;
+    unsigned int lua_i = 0;
 
     int ok = 0;
 
@@ -604,6 +620,22 @@ visualizer_mpd_status(visualizer *vis) {
       lua_settop(vis->Lua,0);
 
       vis->mpd_state = ringbuf_qget(vis->mpd_q);
+
+      for(lua_i=0;lua_i<func_list_len(&(vis->lua_funcs));lua_i++) {
+          if(func_list_s(&(vis->lua_funcs))[lua_i].change_ref != -1) {
+              lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,func_list_s(&(vis->lua_funcs))[lua_i].change_ref);
+              if(lua_isfunction(vis->Lua,-1)) {
+                  lua_pushstring(vis->Lua,"player");
+                  if(lua_pcall(vis->Lua,1,0,0)) {
+                      strerr_warn2x("error: ",lua_tostring(vis->Lua,-1));
+                  }
+              }
+              else {
+                  lua_pop(vis->Lua,1);
+              }
+          }
+      }
+
     }
 
     if( (len - i) > 0) {
@@ -614,10 +646,11 @@ visualizer_mpd_status(visualizer *vis) {
 static inline void
 visualizer_mpd_currentsong(visualizer *vis) {
     char d[4097];
-    int len = 0;
-    int i = 0;
+    unsigned int len = 0;
+    unsigned int i = 0;
     unsigned int j = 0;
     unsigned int k = 0;
+    unsigned int lua_i = 0;
 
     int ok = 0;
 
@@ -681,6 +714,21 @@ visualizer_mpd_currentsong(visualizer *vis) {
       lua_settop(vis->Lua,0);
 
       vis->mpd_state = ringbuf_qget(vis->mpd_q);
+
+      for(lua_i=0;lua_i<func_list_len(&(vis->lua_funcs));lua_i++) {
+          if(func_list_s(&(vis->lua_funcs))[lua_i].change_ref != -1) {
+              lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,func_list_s(&(vis->lua_funcs))[lua_i].change_ref);
+              if(lua_isfunction(vis->Lua,-1)) {
+                  lua_pushstring(vis->Lua,"player");
+                  if(lua_pcall(vis->Lua,1,0,0)) {
+                      strerr_warn2x("error: ",lua_tostring(vis->Lua,-1));
+                  }
+              }
+              else {
+                  lua_pop(vis->Lua,1);
+              }
+          }
+      }
     }
 
     if( (len - i) > 0) {
@@ -691,9 +739,10 @@ visualizer_mpd_currentsong(visualizer *vis) {
 static inline void
 visualizer_mpd_message(visualizer *vis) {
     char d[4097];
-    int len = 0;
-    int i = 0;
+    unsigned int len = 0;
+    unsigned int i = 0;
     unsigned int j = 0;
+    unsigned int lua_i = 0;
 
     int ok = 0;
 
@@ -721,6 +770,21 @@ visualizer_mpd_message(visualizer *vis) {
             if(!stralloc_catb(&message,d+i+j+2,str_chr(d+i+j+2,'\n'))) return;
             lua_pushlstring(vis->Lua,message.s,message.len);
             lua_setfield(vis->Lua,-2,"message");
+
+            for(lua_i=0;lua_i<func_list_len(&(vis->lua_funcs));lua_i++) {
+                if(func_list_s(&(vis->lua_funcs))[lua_i].change_ref != -1) {
+                    lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,func_list_s(&(vis->lua_funcs))[lua_i].change_ref);
+                    if(lua_isfunction(vis->Lua,-1)) {
+                        lua_pushstring(vis->Lua,"message");
+                        if(lua_pcall(vis->Lua,1,0,0)) {
+                            strerr_warn2x("error: ",lua_tostring(vis->Lua,-1));
+                        }
+                    }
+                    else {
+                        lua_pop(vis->Lua,1);
+                    }
+                }
+            }
             continue;
         }
     }
@@ -1075,7 +1139,7 @@ visualizer_init(visualizer *vis) {
     }
 
 
-    vis->Lua = 0;
+    vis->Lua = NULL;
     vis->Lua = luaL_newstate();
     if(!vis->Lua) {
         strerr_warn1x("error: unable to load Lua");
