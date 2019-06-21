@@ -44,17 +44,13 @@ static stralloc mpd_album    = STRALLOC_ZERO;
 static stralloc mpd_artist   = STRALLOC_ZERO;
 
 typedef struct lua_func_list {
-    int frame_ref;
-    int reload_ref;
-    int change_ref;
+    int lua_ref;
     time_t mtime;
     stralloc filename;
 } lua_func_list;
 
 #define LUA_FUNC_LIST_ZERO { \
-  .frame_ref = -1, \
-  .reload_ref = -1, \
-  .change_ref = -1, \
+  .lua_ref = -1, \
   .mtime = -1, \
   .filename = STRALLOC_ZERO, \
 }
@@ -170,14 +166,8 @@ static inline void
 lua_func_list_free(visualizer *vis, genalloc *list) {
     unsigned long i;
     for(i=0;i<func_list_len(list);i++) {
-        if(func_list_s(list)[i].frame_ref != -1) {
-            luaL_unref(vis->Lua, LUA_REGISTRYINDEX, func_list_s(list)[i].frame_ref );
-        }
-        if(func_list_s(list)[i].reload_ref != -1) {
-            luaL_unref(vis->Lua, LUA_REGISTRYINDEX, func_list_s(list)[i].reload_ref );
-        }
-        if(func_list_s(list)[i].change_ref != -1) {
-            luaL_unref(vis->Lua, LUA_REGISTRYINDEX, func_list_s(list)[i].change_ref );
+        if(func_list_s(list)[i].lua_ref != -1) {
+            luaL_unref(vis->Lua, LUA_REGISTRYINDEX, func_list_s(list)[i].lua_ref );
         }
         stralloc_free(&(func_list_s(list)[i].filename));
     }
@@ -222,49 +212,23 @@ visualizer_load_scripts(visualizer *vis) {
             continue;
         }
         if(lua_isfunction(vis->Lua,-1)) {
-            if(cur->frame_ref != -1) {
-                luaL_unref(vis->Lua,LUA_REGISTRYINDEX,cur->frame_ref);
+            if(cur->lua_ref != -1) {
+                luaL_unref(vis->Lua,LUA_REGISTRYINDEX,cur->lua_ref);
             }
-            cur->frame_ref = luaL_ref(vis->Lua,LUA_REGISTRYINDEX);
+            lua_newtable(vis->Lua);
+            lua_pushvalue(vis->Lua,-2);
+            lua_setfield(vis->Lua,-2,"onframe");
+            cur->lua_ref = luaL_ref(vis->Lua,LUA_REGISTRYINDEX);
             cur->mtime = st.st_mtime;
+            lua_pop(vis->Lua,1);
         }
         else if(lua_istable(vis->Lua,-1)) {
-            lua_getfield(vis->Lua,-1,"onframe");
-            if(lua_isfunction(vis->Lua,-1)) {
-                if(cur->frame_ref != -1) {
-                    luaL_unref(vis->Lua,LUA_REGISTRYINDEX,cur->frame_ref);
-                }
-                cur->frame_ref = luaL_ref(vis->Lua,LUA_REGISTRYINDEX);
-            }
-            else {
-                lua_pop(vis->Lua,1);
-            }
-
-            lua_getfield(vis->Lua,-1,"onreload");
-            if(lua_isfunction(vis->Lua,-1)) {
-                if(cur->reload_ref != -1) {
-                    luaL_unref(vis->Lua,LUA_REGISTRYINDEX,cur->reload_ref);
-                }
-                cur->reload_ref = luaL_ref(vis->Lua,LUA_REGISTRYINDEX);
-            }
-            else {
-                lua_pop(vis->Lua,1);
-            }
-
-            lua_getfield(vis->Lua,-1,"onchange");
-            if(lua_isfunction(vis->Lua,-1)) {
-                if(cur->change_ref != -1) {
-                    luaL_unref(vis->Lua,LUA_REGISTRYINDEX,cur->change_ref);
-                }
-                cur->change_ref = luaL_ref(vis->Lua,LUA_REGISTRYINDEX);
-            }
-            else {
-                lua_pop(vis->Lua,1);
-            }
-
+            cur->lua_ref = luaL_ref(vis->Lua,LUA_REGISTRYINDEX);
+            lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,cur->lua_ref);
             lua_getfield(vis->Lua,-1,"onload");
             if(lua_isfunction(vis->Lua,-1) && cur->mtime == -1) {
-                if(lua_pcall(vis->Lua,0,0,0)) {
+                lua_pushvalue(vis->Lua,-2);
+                if(lua_pcall(vis->Lua,1,0,0)) {
                     strerr_warn2x("warning: ",lua_tostring(vis->Lua,-1));
                 }
             }
@@ -272,12 +236,22 @@ visualizer_load_scripts(visualizer *vis) {
                 lua_pop(vis->Lua,1);
             }
 
-            if(cur->reload_ref != -1 && cur->mtime != -1) {
-                lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,cur->reload_ref);
-                if(lua_pcall(vis->Lua,0,0,0)) {
-                    strerr_warn2x("warning: ",lua_tostring(vis->Lua,-1));
+            if(cur->mtime != -1) {
+                lua_getfield(vis->Lua,-1,"onreload");
+                if(lua_isfunction(vis->Lua,-1)) {
+                    lua_pushvalue(vis->Lua,-2);
+                    if(lua_pcall(vis->Lua,1,0,0)) {
+                        strerr_warn2x("warning: ", lua_tostring(vis->Lua,-1));
+                    }
+
                 }
+                else {
+                    lua_pop(vis->Lua,1);
+                }
+
             }
+            lua_pop(vis->Lua,1);
+
             cur->mtime = st.st_mtime;
 
         }
@@ -478,17 +452,20 @@ static void vis_mpdc_response(mpdc_connection *conn, const char *cmd, const char
             lua_setfield(vis->Lua,-2,"message"); /* pop */
 
             for(lua_i=0;lua_i<func_list_len(&(vis->lua_funcs));lua_i++) {
-                if(func_list_s(&(vis->lua_funcs))[lua_i].change_ref != -1) {
-                    lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,func_list_s(&(vis->lua_funcs))[lua_i].change_ref); /* push */
+                if(func_list_s(&(vis->lua_funcs))[lua_i].lua_ref != -1) {
+                    lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,func_list_s(&(vis->lua_funcs))[lua_i].lua_ref); /* push */
+                    lua_getfield(vis->Lua,-1,"onchange");
                     if(lua_isfunction(vis->Lua,-1)) {
+                        lua_pushvalue(vis->Lua,-2);
                         lua_pushstring(vis->Lua,"message");
-                        if(lua_pcall(vis->Lua,1,0,0)) {
+                        if(lua_pcall(vis->Lua,2,0,0)) {
                             strerr_warn2x("error: ",lua_tostring(vis->Lua,-1));
                         }
                     }
                     else {
                         lua_pop(vis->Lua,1); /* pop */
                     }
+                    lua_pop(vis->Lua,1);
                 }
             }
             lua_pop(vis->Lua,1);
@@ -577,16 +554,36 @@ static void vis_mpdc_response_end(mpdc_connection *conn, const char *cmd, int ok
       }
 
       else if(strcmp(cmd,"currentsong") == 0) {
-        mpd_file.len ? lua_pushlstring(vis->Lua,mpd_file.s,mpd_file.len) : lua_pushnil(vis->Lua);
+        if(mpd_file.len) {
+            lua_pushlstring(vis->Lua,mpd_file.s,mpd_file.len);
+        }
+        else {
+            lua_pushnil(vis->Lua);
+        }
         lua_setfield(vis->Lua,-2,"file");
 
-        mpd_title.len ? lua_pushlstring(vis->Lua,mpd_title.s,mpd_title.len) : lua_pushnil(vis->Lua);
+        if(mpd_title.len) {
+            lua_pushlstring(vis->Lua,mpd_title.s,mpd_title.len);
+        }
+        else {
+            lua_pushnil(vis->Lua);
+        }
         lua_setfield(vis->Lua,-2,"title");
 
-        mpd_artist.len ? lua_pushlstring(vis->Lua,mpd_artist.s,mpd_artist.len) : lua_pushnil(vis->Lua);
+        if(mpd_artist.len) {
+            lua_pushlstring(vis->Lua,mpd_artist.s,mpd_artist.len);
+        }
+        else {
+            lua_pushnil(vis->Lua);
+        }
         lua_setfield(vis->Lua,-2,"artist");
 
-        mpd_album.len ? lua_pushlstring(vis->Lua,mpd_album.s,mpd_album.len) : lua_pushnil(vis->Lua);
+        if(mpd_album.len) {
+            lua_pushlstring(vis->Lua,mpd_album.s,mpd_album.len);
+        }
+        else {
+            lua_pushnil(vis->Lua);
+        }
         lua_setfield(vis->Lua,-2,"album");
 
         mpd_file.len = 0;
@@ -599,17 +596,20 @@ static void vis_mpdc_response_end(mpdc_connection *conn, const char *cmd, int ok
       lua_pop(vis->Lua,1);
 
       for(lua_i=0;lua_i<func_list_len(&(vis->lua_funcs));lua_i++) {
-          if(func_list_s(&(vis->lua_funcs))[lua_i].change_ref != -1) {
-              lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,func_list_s(&(vis->lua_funcs))[lua_i].change_ref);
+          if(func_list_s(&(vis->lua_funcs))[lua_i].lua_ref != -1) {
+              lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,func_list_s(&(vis->lua_funcs))[lua_i].lua_ref);
+              lua_getfield(vis->Lua,-1,"onchange");
               if(lua_isfunction(vis->Lua,-1)) {
+                  lua_pushvalue(vis->Lua,-2);
                   lua_pushstring(vis->Lua,"player");
-                  if(lua_pcall(vis->Lua,1,0,0)) {
+                  if(lua_pcall(vis->Lua,2,0,0)) {
                       strerr_warn2x("error: ",lua_tostring(vis->Lua,-1));
                   }
               }
               else {
                   lua_pop(vis->Lua,1); /* balanced */
               }
+              lua_pop(vis->Lua,1);
           }
       }
 
@@ -651,21 +651,24 @@ visualizer_make_frames(visualizer *vis) {
         lua_getglobal(vis->Lua,"song");
         lua_pushinteger(vis->Lua,vis->elapsed_ms / 1000);
         lua_setfield(vis->Lua,-2,"elapsed");
+        lua_pop(vis->Lua,1);
 
         for(i=0;i<func_list_len(&(vis->lua_funcs));i++) {
-            if(func_list_s(&(vis->lua_funcs))[i].frame_ref != -1) {
-                lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,func_list_s(&(vis->lua_funcs))[i].frame_ref);
+            if(func_list_s(&(vis->lua_funcs))[i].lua_ref != -1) {
+                lua_rawgeti(vis->Lua,LUA_REGISTRYINDEX,func_list_s(&(vis->lua_funcs))[i].lua_ref);
+                lua_getfield(vis->Lua,-1,"onframe");
                 if(lua_isfunction(vis->Lua,-1)) {
-                    if(lua_pcall(vis->Lua,0,0,0)) {
+                    lua_pushvalue(vis->Lua,-2);
+                    if(lua_pcall(vis->Lua,1,0,0)) {
                         strerr_warn2x("error: ",lua_tostring(vis->Lua,-1));
                     }
                 }
                 else {
                     lua_pop(vis->Lua,1);
                 }
+                lua_pop(vis->Lua,1);
             }
         }
-        lua_pop(vis->Lua,1);
 
         lua_gc(vis->Lua,LUA_GCCOLLECT,0);
 
@@ -1071,7 +1074,7 @@ visualizer_loop(visualizer *vis) {
                 return -1;
                 break;
             case SIGUSR1: {
-                strerr_warn1x("info: eeloading images/scripts");
+                strerr_warn1x("info: reloading images/scripts");
                 visualizer_load_scripts(vis);
                 break;
 
