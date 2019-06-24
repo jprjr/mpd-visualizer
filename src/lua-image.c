@@ -10,6 +10,7 @@
 #include <skalibs/skalibs.h>
 #include <pthread.h>
 #include <sched.h>
+#include <assert.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -320,14 +321,17 @@ lua_image_unload(lua_State *L) {
         lua_pushliteral(L,"Missing argument self");
         return 2;
     }
-    lua_getfield(L,1,"image_state");
+
+    lua_getfield(L,1,"image_state"); /* push */
 
     if(!lua_isnumber(L,-1)) {
+        lua_pop(L,1);
         lua_pushnil(L);
         lua_pushliteral(L,"Missing field image_state");
         return 2;
     }
     state = lua_tointeger(L,-1);
+    lua_pop(L,1);
 
     if(state != IMAGE_LOADED) {
         lua_pushboolean(L,0);
@@ -537,6 +541,7 @@ lua_image_get_pixel(lua_State *L) {
     y = height - y;
 
     index = (y * width * channels) + (x * channels);
+    assert(index < (height * width * channels));
 
     lua_pushinteger(L,image[index + 2]);
     lua_pushinteger(L,image[index + 1]);
@@ -603,23 +608,12 @@ lua_image_draw_rectangle(lua_State *L) {
     lua_getfield(L,1,"channels");
     channels = lua_tointeger(L,-1);
 
+    lua_pop(L,4);
+
     if(r > 255 || b > 255 || g > 255 || a > 255 ||
        r < 0   || b < 0   || g < 0 || a < 0 ) {
         lua_pushboolean(L,0);
         return 1;
-    }
-
-    if(x1 < 1) {
-        x1 = 1;
-    }
-    if(x2 < 1) {
-        x2 = 1;
-    }
-    if(y1 < 1) {
-        y1 = 1;
-    }
-    if(y2 < 1) {
-        y2  = 1;
     }
 
     if(x1 <= x2) {
@@ -640,6 +634,15 @@ lua_image_draw_rectangle(lua_State *L) {
         yend = y1;
     }
 
+    if(xend < 1) {
+        lua_pushboolean(L,0);
+        return 1;
+    }
+    if(yend < 1) {
+        lua_pushboolean(L,0);
+        return 1;
+    }
+
     if(xstart > width) {
         lua_pushboolean(L,0);
         return 1;
@@ -648,6 +651,14 @@ lua_image_draw_rectangle(lua_State *L) {
     if(ystart > height) {
         lua_pushboolean(L,0);
         return 1;
+    }
+
+    if(xstart < 1) {
+        xstart = 1;
+    }
+
+    if(ystart < 1) {
+        ystart = 1;
     }
 
     if(xend > width) {
@@ -677,6 +688,7 @@ lua_image_draw_rectangle(lua_State *L) {
     for(x=xstart;x<xend;x++) {
         for(y=ystart;y<yend;y++) {
             byte = (y * width * channels) + (x * channels);
+            assert(byte < (width * height * channels));
             if(a == 255) {
                 image[byte] = b;
                 image[byte+1] = g;
@@ -734,6 +746,8 @@ static int lua_image_set_pixel(lua_State *L) {
     lua_getfield(L,1,"channels");
     channels = luaL_checkinteger(L,-1);
 
+    lua_pop(L,4);
+
     if(x < 1 || y < 1 || x > width || y > height) {
         lua_pushboolean(L,0);
         return 1;
@@ -750,6 +764,7 @@ static int lua_image_set_pixel(lua_State *L) {
     y = height - y;
 
     index = (y * width * channels) + (x * channels);
+    assert(index < (width * height * channels));
 
     if(a == 255) {
         image[index] = b;
@@ -789,13 +804,17 @@ lua_image_set(lua_State *L) {
 
     lua_getfield(L,1,"image");
     image_one = lua_touserdata(L,-1);
+
     lua_getfield(L,1,"image_len");
     image_one_len = lua_tointeger(L,-1);
 
     lua_getfield(L,2,"image");
     image_two = lua_touserdata(L,-1);
+
     lua_getfield(L,2,"image_len");
     image_two_len = lua_tointeger(L,-1);
+
+    lua_pop(L,4);
 
     if(image_one && image_two && (image_one_len == image_two_len)) {
         memcpy(image_one,image_two,image_one_len);
@@ -846,6 +865,8 @@ lua_image_blend(lua_State *L) {
     image_two = lua_touserdata(L,-1);
     lua_getfield(L,2,"image_len");
     image_two_len = lua_tointeger(L,-1);
+
+    lua_pop(L,4);
 
     if(image_one && image_two && (image_one_len == image_two_len)) {
         for(i=0;i<image_one_len;i+=8) {
@@ -900,7 +921,7 @@ lua_image_stamp_image(lua_State *L) {
     int yt;
     unsigned int dxt;
     unsigned int dyt;
-    int byte;
+    unsigned int byte;
     int alpha;
     int alpha_inv;
 
@@ -1007,6 +1028,7 @@ lua_image_stamp_image(lua_State *L) {
             dyt = height - dyt;
 
             byte = (yt * src_width * src_channels) + (xt * src_channels);
+            assert(byte < (src_width * src_height * src_channels));
 
             if(src_channels == 4) {
                 a = image_two[byte + 3];
@@ -1028,6 +1050,7 @@ lua_image_stamp_image(lua_State *L) {
             }
 
             byte = (dyt * width * channels) + (dxt * channels);
+            assert(byte < (width * height * channels));
 
             if(a == 255) {
                 image_one[byte] = b;
