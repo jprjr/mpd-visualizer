@@ -1,3 +1,10 @@
+# RETIRED
+
+I've created a new program, [`lua-music-visualizer`](https://github.com/jprjr/lua-music-visualizer),
+that works with local music files as well as MPD, I'm focusing my free time on that.
+
+Leaving the original documentation below.
+
 # mpd-visualizer
 
 This is a program primarily for creating videos from MPD, using Lua. It's suitable for using in
